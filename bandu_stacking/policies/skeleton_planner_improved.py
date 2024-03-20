@@ -4,7 +4,17 @@ from collections import defaultdict, namedtuple
 
 import numpy as np
 import trimesh
-from pybullet_tools.utils import (
+from scipy.spatial.transform import Rotation as R
+from tqdm import tqdm
+
+from bandu_stacking.bandu_utils import check_collision, mesh_from_obj
+from bandu_stacking.env import TABLE_AABB, get_absolute_pose
+from bandu_stacking.env_utils import (
+    GroupConf,
+    RelativePose,
+    Sequence,
+)
+from bandu_stacking.pb_utils import (
     Euler,
     Point,
     Pose,
@@ -12,24 +22,13 @@ from pybullet_tools.utils import (
     get_pose,
     stable_z_on_aabb,
 )
-from scipy.spatial.transform import Rotation as R
-from tqdm import tqdm
-
-from bandu_stacking.bandu_utils import check_collision, mesh_from_obj
-from bandu_stacking.env import TABLE_AABB, get_absolute_pose
-from bandu_stacking.policies.planning.entities import WORLD_BODY
-from bandu_stacking.policies.planning.primitives import (
-    GroupConf,
-    RelativePose,
-    Sequence,
-)
-from bandu_stacking.policies.planning.streams import (
+from bandu_stacking.policies.policy import Action, Policy
+from bandu_stacking.streams import (
     get_grasp_gen_fn,
     get_plan_motion_fn,
     get_plan_pick_fn,
     get_plan_place_fn,
 )
-from bandu_stacking.policies.policy import Action, Policy
 
 OOBB = namedtuple("OOBB", ["aabb", "pose"])
 
@@ -67,7 +66,7 @@ def find_place_plan(GROUP, obj, place_pose, grasp, base_conf, place_planner, cli
     place = None
     while not place:
         place_rp = RelativePose(
-            obj, parent=WORLD_BODY, relative_pose=place_pose, client=client
+            obj, parent=None, relative_pose=place_pose, client=client
         )
         place = place_planner(GROUP, obj, place_rp, grasp, base_conf)
     return place
@@ -83,7 +82,7 @@ def find_motion_plan(GROUP, start_conf, end_conf, motion_planner, attachments=[]
 
 
 def get_pick_place_plan(abstract_action, env):
-    # client, robot = env.client, env.robot
+    client, robot = env.client, env.robot
     client = env.client
     surface_aabb = TABLE_AABB
     GROUP = "main_arm"
@@ -93,37 +92,43 @@ def get_pick_place_plan(abstract_action, env):
     target_pose = client.getBasePositionAndOrientation(abstract_action.target_block)
     placement_pose = get_absolute_pose(target_pose, abstract_action)
 
-    # motion_planner = get_plan_motion_fn(robot, environment=env.block_ids, client=client)
-    # pick_planner, place_planner = get_plan_pick_fn(robot, client=client), get_plan_place_fn(robot, client=client)
-    # grasp_finder = get_grasp_gen_fn(robot, env.block_ids, grasp_mode="top", client=client)
+    motion_planner = get_plan_motion_fn(robot, environment=env.block_ids, client=client)
+    pick_planner, place_planner = get_plan_pick_fn(
+        robot, client=client
+    ), get_plan_place_fn(robot, client=client)
+    grasp_finder = get_grasp_gen_fn(
+        robot, env.block_ids, grasp_mode="top", client=client
+    )
 
-    # init_confs = get_initial_configurations(robot, client)
-    # pose, base_conf = RelativePose(obj, client=client), init_confs["base"]
-    # q1 = init_confs[GROUP]
+    init_confs = get_initial_configurations(robot, client)
+    pose, base_conf = RelativePose(obj, client=client), init_confs["base"]
+    q1 = init_confs[GROUP]
     pose = RelativePose(obj, client=client)
 
-    # (grasp,) = next(grasp_finder(GROUP, obj, obj_aabb, obj_pose))
+    (grasp,) = next(grasp_finder(GROUP, obj, obj_aabb, obj_pose))
 
-    # pick = find_pick_plan(GROUP, obj, pose, grasp, base_conf, pick_planner)
-    # q2, at1 = pick
+    pick = find_pick_plan(GROUP, obj, pose, grasp, base_conf, pick_planner)
+    q2, at1 = pick
 
-    # if placement_pose is None:
-    #     placement_pose = get_random_placement_pose(obj, surface_aabb, client)
+    if placement_pose is None:
+        placement_pose = get_random_placement_pose(obj, surface_aabb, client)
 
-    # place = find_place_plan(GROUP, obj, placement_pose, grasp, base_conf, place_planner, client)
-    # q3, at2 = place
+    place = find_place_plan(
+        GROUP, obj, placement_pose, grasp, base_conf, place_planner, client
+    )
+    q3, at2 = place
 
-    # _, _, tool_name = robot.manipulators[robot.side_from_arm(GROUP)]
-    # attachment = grasp.create_attachment(robot, link=robot.link_from_name(tool_name))
+    _, _, tool_name = robot.manipulators[robot.side_from_arm(GROUP)]
+    attachment = grasp.create_attachment(robot, link=robot.link_from_name(tool_name))
 
-    # motion_plan1 = find_motion_plan(GROUP, q1, q2, motion_planner)
-    # motion_plan2 = find_motion_plan(GROUP, q2, q3, motion_planner, attachments=[attachment])
+    motion_plan1 = find_motion_plan(GROUP, q1, q2, motion_planner)
+    motion_plan2 = find_motion_plan(
+        GROUP, q2, q3, motion_planner, attachments=[attachment]
+    )
 
-    # env.robot.remove_components()
+    env.robot.remove_components()
 
-    # return placement_pose, Sequence([motion_plan1, at1, motion_plan2, at2])
-
-    return placement_pose, Sequence([at1, at2])
+    return placement_pose, Sequence([motion_plan1, at1, motion_plan2, at2])
 
 
 class SkeletonPlannerImproved(Policy):
@@ -156,7 +161,8 @@ class SkeletonPlannerImproved(Policy):
     def sample_constrained_action(
         self, source_obj, target_obj, mesh_info, best_face=False
     ):
-        """Sample a pick and place action with the source object on the target object."""
+        """Sample a pick and place action with the source object on the target
+        object."""
         if best_face:
             # Place the object on its largest face
             mesh_dict = mesh_info[source_obj]
@@ -193,11 +199,10 @@ class SkeletonPlannerImproved(Policy):
         return Action(source_obj, target_obj, pose)
 
     def get_plan_skeletons(self, initial_state, mesh_info, num_skeletons=1000):
-        """A plan skeleton is a sequence of symbolic block stacking
-        actions. Multiple objects can be stacked on a single object, and
-        even if one object is symbolically stacked on another object, it
-        can be resting on two objects based on the continuous
-        parameters.
+        """A plan skeleton is a sequence of symbolic block stacking actions.
+        Multiple objects can be stacked on a single object, and even if one
+        object is symbolically stacked on another object, it can be resting on
+        two objects based on the continuous parameters.
 
         Several ways to generate this. The simplest is to sample a set of random
         skeletons by choosing source and target objects at random, iterating until
@@ -476,22 +481,16 @@ class SkeletonPlannerImproved(Policy):
                     return concrete_plan
 
     def get_action(self, initial_state):
-        # if self.plan == None:
-        #     abstract_actions = self.get_plan(initial_state)
-        #     print(abstract_actions)
-        #     current_state = initial_state
-        #     self.plan = abstract_actions
-        #     # self.plan = []
-        #     # for aa in abstract_actions:
-        #     #     self.plan.append(get_pick_place_plan(aa, env=self.env)[1])
-        #     #     current_state = self.env.step_abstract(current_state, aa)
+        if self.plan == None:
+            abstract_actions = self.get_plan(initial_state)
+            current_state = initial_state
+            self.plan = []
+            for aa in abstract_actions:
+                self.plan.append(get_pick_place_plan(aa, env=self.env)[1])
+                current_state = self.env.step_abstract(current_state, aa)
 
-        # elif len(self.plan) == 0:
-        #     # No more actions left, terminate the policy
-        #     self.plan = None
-        #     return None
-
-        if len(self.plan) == 0:
+        elif len(self.plan) == 0:
+            # No more actions left, terminate the policy
             self.plan = None
             return None
 

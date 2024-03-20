@@ -81,9 +81,7 @@ def main():
         plan = policy.get_plan(s)
         policy.plan = plan
         env.client.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
-        """
-        Load fullres meshes for execution
-        """
+        """Load fullres meshes for execution."""
         env.client.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
         # Sample mass, friction, restitution randomly
         sampled_mass = np.random.uniform(0.5, 1)

@@ -1,5 +1,6 @@
-"""
-Capture RGB-D images from multiple realsense cameras and register them using ICP.
+"""Capture RGB-D images from multiple realsense cameras and register them using
+ICP.
+
 Convert them to meshes for use in planning.
 """
 
@@ -297,7 +298,7 @@ def run_search_for_calibration(source, target, savedir, iters):
 
 
 def pick_points_from_gui(pcd: o3d.geometry.PointCloud) -> np.array:
-    """Return a set of clicked points from the visualizer
+    """Return a set of clicked points from the visualizer.
 
     Args:
         pcd (o3d.geometry.PointCloud): Open3D pointcloud to visualize
@@ -321,7 +322,6 @@ def pick_points_from_gui(pcd: o3d.geometry.PointCloud) -> np.array:
 def main():
     # imgdir = "capture-feb-17/dry-erase-marker-2"
     imgdir = "realworld/capture-feb-17/dry-erase-marker-2"
-
     """
     top cam: 103422071983
     side cam (furthest from the computer): 233622075696
@@ -401,18 +401,15 @@ def main():
     # for i in range(10):
     #     registration_result = global_registration(source, target, voxel_size=0.01, visualize=True)
     #     print(registration_result.transformation)
-
     """
     Run global registration multiple times and save valid results to pkl file
     """
     # run_search_for_calibration(source, target, imgdir, iters=500)
-
     """
     Pick points from GUI
     """
     # picked_points = pick_points_from_gui(pcds[0])
     # print(picked_points)
-
     """
     Process global reg results and visualize most promising solutions
     """
@@ -436,7 +433,6 @@ def main():
     # max_fitness_idx = np.asarray(global_reg_results["fitnesses"]).argmax()
     # min_inlier_rmse_idx = np.asarray(global_reg_results["inlier_rmses"]).argmin()
     # draw_registration_result(source, target, global_reg_results["registration_results"][max_fitness_idx])
-
     """
     Refine (local reg) using ICP
     """

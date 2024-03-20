@@ -3,11 +3,10 @@ from collections import namedtuple
 import numpy as np
 import pybullet as p
 
-from pybullet_planning.pybullet_tools.utils import (
+from bandu_stacking.pb_utils import (
     AABB,
     UNKNOWN_FILE,
     Mesh,
-    apply_affine,
     get_aabb,
     get_aabb_center,
     get_aabb_vertices,
@@ -18,7 +17,7 @@ from pybullet_planning.pybullet_tools.utils import (
     mesh_from_points,
     read_obj,
     set_pose,
-    wait_if_gui,
+    tform_points,
 )
 
 
@@ -47,7 +46,7 @@ def mesh_from_obj(obj, use_concave=True, client=None, **kwargs):
         mesh = read_obj(filename, decompose=False)
 
     vertices = [scale * np.array(vertex) for vertex in mesh.vertices]
-    vertices = apply_affine(get_data_pose(data), vertices)
+    vertices = tform_points(get_data_pose(data), vertices)
     return Mesh(vertices, mesh.faces)
 
 

@@ -8,29 +8,26 @@ from typing import List, Tuple
 import numpy as np
 import pybullet as p
 import pybullet_utils.bullet_client as bc
-from pybullet_tools.utils import (
-    AABB,
-    HideOutput,
-    Pose,
-    add_data_path,
-    create_box,
-    get_aabb_extent,
-    load_pybullet,
-    set_camera_pose,
-    set_dynamics,
-    set_pose,
-    wait_for_duration,
-    wait_if_gui,
-)
 
 from bandu_stacking.bandu_utils import (
     create_pybullet_block,
     get_absolute_pose,
     pairwise_collision,
 )
-from bandu_stacking.policies.planning.primitives import WorldState
+from bandu_stacking.env_utils import WorldState
+from bandu_stacking.pb_utils import (
+    AABB,
+    Pose,
+    add_data_path,
+    create_box,
+    get_aabb_extent,
+    set_camera_pose,
+    set_dynamics,
+    set_pose,
+    wait_for_duration,
+    wait_if_gui,
+)
 from bandu_stacking.policies.policy import State
-from bandu_stacking.robots.panda.panda_utils import PANDA_PATH, PandaRobot
 
 TABLE_AABB = AABB(
     lower=(-1.53 / 2.0, -1.22 / 2.0, -0.03 / 2.0),
@@ -45,21 +42,20 @@ def create_default_env(client=None, **kwargs):
     )
 
     add_data_path()
-    with HideOutput(enable=True):
-        floor, _ = add_table(*get_aabb_extent(TABLE_AABB), client=client)
-        obstacles = [
-            floor,  # collides with the robot when MAX_DISTANCE >= 5e-3
-        ]
+    floor, _ = add_table(*get_aabb_extent(TABLE_AABB), client=client)
+    obstacles = [
+        floor,  # collides with the robot when MAX_DISTANCE >= 5e-3
+    ]
 
-        for obst in obstacles:
-            set_dynamics(
-                obst,
-                lateralFriction=1.0,  # linear (lateral) friction
-                spinningFriction=1.0,  # torsional friction around the contact normal
-                rollingFriction=0.01,  # torsional friction orthogonal to contact normal
-                restitution=0.0,  # restitution: 0 => inelastic collision, 1 => elastic collision
-                client=client,
-            )
+    for obst in obstacles:
+        set_dynamics(
+            obst,
+            lateralFriction=1.0,  # linear (lateral) friction
+            spinningFriction=1.0,  # torsional friction around the contact normal
+            rollingFriction=0.01,  # torsional friction orthogonal to contact normal
+            restitution=0.0,  # restitution: 0 => inelastic collision, 1 => elastic collision
+            client=client,
+        )
 
     client.setGravity(0, 0, -10)
 
@@ -86,8 +82,6 @@ def add_table(
     table_width: float = 1.50,
     table_length: float = 1.22,
     table_thickness: float = 0.03,
-    thickness_8020: float = 0.025,
-    post_height: float = 1.25,
     color: Tuple[float, float, float, float] = (0.75, 0.75, 0.75, 1.0),
     client=None,
 ) -> Tuple[int, List[int]]:
@@ -98,55 +92,12 @@ def add_table(
     set_pose(table, TABLE_POSE, client=client)
     workspace = []
 
-    # # 80/20 posts and beams
-    # post_offset = thickness_8020 / 2  # offset (x, y) by half the thickness
-    # x_post = table_width / 2 - post_offset
-    # y_post = table_length / 2 - post_offset
-    # z_post = post_height / 2
-    # for mult_1 in [1, -1]:
-    #     for mult_2 in [1, -1]:
-    #         # Post
-    #         post = create_box(
-    #             thickness_8020, thickness_8020, post_height, color=color, client=client
-    #         )
-    #         set_pose(
-    #             post,
-    #             Pose((TABLE_POSE[0][0] + x_post * mult_1, y_post * mult_2, z_post)),
-    #             client=client,
-    #         )
-    #         workspace.append(post)
-
-    # # 8020 cross-beams parallel in x-axis
-    # beam_offset = thickness_8020 / 2
-    # y_beam = table_length / 2 - beam_offset
-    # z_beam = post_height + beam_offset
-    # for mult in [1, -1]:
-    #     beam = create_box(
-    #         table_width, thickness_8020, thickness_8020, color=color, client=client
-    #     )
-    #     set_pose(beam, Pose((TABLE_POSE[0][0], y_beam * mult, z_beam)), client=client)
-    #     workspace.append(beam)
-
-    # # 8020 cross-beams parallel in y-axis
-    # beam_length = table_length - 2 * thickness_8020
-    # x_beam = table_width / 2 - beam_offset
-    # for mult in [1, -1]:
-    #     beam = create_box(
-    #         thickness_8020, beam_length, thickness_8020, color=color, client=client
-    #     )
-    #     set_pose(
-    #         beam, Pose((TABLE_POSE[0][0] + x_beam * mult, 0, z_beam)), client=client
-    #     )
-    #     workspace.append(beam)
-
-    # assert len(workspace) == 4 + 4  # 1 table, 4 posts, 4 beams
     return table, workspace
 
 
 def setup_client_pybullet():
     client = bc.BulletClient(connection_mode=p.GUI)
-    # robot_body = load_pybullet(PANDA_PATH, fixed_base=True, client=client)
-    # return robot_body, client
+
     return client
 
 
@@ -262,8 +213,7 @@ class StackingEnvironment:
             for f in bandu_filenames
             if f.endswith("urdf") and f not in original_bandu_urdfs
         ]
-        block_fullres_ids, bbox_fullres = [], []
-        for i in range(self.num_blocks):
+        for _ in range(self.num_blocks):
             bandu_urdf = os.path.join(bandu_model_path, random.choice(bandu_urdfs))
             obj = self.client.loadURDF(bandu_urdf, globalScaling=0.002)
             block_ids.append(obj)
@@ -280,13 +230,7 @@ class StackingEnvironment:
                 lateralFriction=self._obj_friction,
                 restitution=self._obj_restitution,
             )
-            # obj_fullres = self.client.loadURDF(
-            #     os.path.join(bandu_model_path, random.choice(original_bandu_urdfs)),
-            #     globalScaling=0.002,
-            # )
-            # block_fullres_ids.append(obj_fullres)
-            # bbox_fullres.append(self.client.getAABB(block_fullres_ids[-1]))
-        return block_ids, bounding_boxes  # , block_fullres_ids, bbox_fullres
+        return block_ids, bounding_boxes
 
     def add_random_objects(self):
         bounding_boxes = []
@@ -440,9 +384,7 @@ class StackingEnvironment:
         return next_state
 
     def replace_with_fullres_meshes(self, mass=0.5, friction=0.25, restitution=1.0):
-        """
-        Replace the simplified meshes with the full resolution meshes.
-        """
+        """Replace the simplified meshes with the full resolution meshes."""
 
         initial_state = self.state_from_sim()
         dynamics_properties = []

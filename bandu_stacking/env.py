@@ -8,29 +8,29 @@ from typing import List, Tuple
 import numpy as np
 import pybullet as p
 import pybullet_utils.bullet_client as bc
-from pybullet_tools.utils import (
-    AABB,
-    HideOutput,
-    Pose,
-    add_data_path,
-    create_box,
-    get_aabb_extent,
-    load_pybullet,
-    set_camera_pose,
-    set_dynamics,
-    set_pose,
-    wait_for_duration,
-    wait_if_gui,
-)
 
 from bandu_stacking.bandu_utils import (
     create_pybullet_block,
     get_absolute_pose,
     pairwise_collision,
 )
-from bandu_stacking.policies.planning.primitives import WorldState
+from bandu_stacking.env_utils import (
+    PANDA_PATH,
+    PandaRobot,
+    WorldState,
+    create_default_env,
+)
+from bandu_stacking.pb_utils import (
+    AABB,
+    Pose,
+    create_box,
+    get_aabb_extent,
+    load_pybullet,
+    set_pose,
+    wait_for_duration,
+    wait_if_gui,
+)
 from bandu_stacking.policies.policy import State
-from bandu_stacking.robots.panda.panda_utils import PANDA_PATH, PandaRobot
 
 TABLE_AABB = AABB(
     lower=(-1.53 / 2.0, -1.22 / 2.0, -0.03 / 2.0),
@@ -39,35 +39,12 @@ TABLE_AABB = AABB(
 TABLE_POSE = Pose((0.1, 0, -TABLE_AABB.upper[2]))
 
 
-def create_default_env(client=None, **kwargs):
-    set_camera_pose(camera_point=[0.75, -0.75, 1.25], target_point=[-0.75, 0.75, 0.0], client=client)
-
-    add_data_path()
-    with HideOutput(enable=True):
-        floor, _ = add_table(*get_aabb_extent(TABLE_AABB), client=client)
-        obstacles = [
-            floor,  # collides with the robot when MAX_DISTANCE >= 5e-3
-        ]
-
-        for obst in obstacles:
-            set_dynamics(
-                obst,
-                lateralFriction=1.0,  # linear (lateral) friction
-                spinningFriction=1.0,  # torsional friction around the contact normal
-                rollingFriction=0.01,  # torsional friction orthogonal to contact normal
-                restitution=0.0,  # restitution: 0 => inelastic collision, 1 => elastic collision
-                client=client,
-            )
-
-    client.setGravity(0, 0, -10)
-
-    return floor, obstacles
-
-
 DEFAULT_TS = 5e-3
 
 
-def iterate_sequence(state, sequence, time_step=DEFAULT_TS, teleport=False, **kwargs):  # None | INF
+def iterate_sequence(
+    state, sequence, time_step=DEFAULT_TS, teleport=False, **kwargs
+):  # None | INF
     assert sequence is not None
     for i, _ in enumerate(sequence.iterate(state, teleport=teleport, **kwargs)):
         state.propagate()
@@ -88,7 +65,9 @@ def add_table(
     client=None,
 ) -> Tuple[int, List[int]]:
     # Panda table downstairs very roughly (few cm of error)
-    table = create_box(table_width, table_length, table_thickness, color=color, client=client)
+    table = create_box(
+        table_width, table_length, table_thickness, color=color, client=client
+    )
     set_pose(table, TABLE_POSE, client=client)
     workspace = []
 
@@ -100,7 +79,9 @@ def add_table(
     for mult_1 in [1, -1]:
         for mult_2 in [1, -1]:
             # Post
-            post = create_box(thickness_8020, thickness_8020, post_height, color=color, client=client)
+            post = create_box(
+                thickness_8020, thickness_8020, post_height, color=color, client=client
+            )
             set_pose(
                 post,
                 Pose((TABLE_POSE[0][0] + x_post * mult_1, y_post * mult_2, z_post)),
@@ -113,7 +94,9 @@ def add_table(
     y_beam = table_length / 2 - beam_offset
     z_beam = post_height + beam_offset
     for mult in [1, -1]:
-        beam = create_box(table_width, thickness_8020, thickness_8020, color=color, client=client)
+        beam = create_box(
+            table_width, thickness_8020, thickness_8020, color=color, client=client
+        )
         set_pose(beam, Pose((TABLE_POSE[0][0], y_beam * mult, z_beam)), client=client)
         workspace.append(beam)
 
@@ -121,8 +104,12 @@ def add_table(
     beam_length = table_length - 2 * thickness_8020
     x_beam = table_width / 2 - beam_offset
     for mult in [1, -1]:
-        beam = create_box(thickness_8020, beam_length, thickness_8020, color=color, client=client)
-        set_pose(beam, Pose((TABLE_POSE[0][0] + x_beam * mult, 0, z_beam)), client=client)
+        beam = create_box(
+            thickness_8020, beam_length, thickness_8020, color=color, client=client
+        )
+        set_pose(
+            beam, Pose((TABLE_POSE[0][0] + x_beam * mult, 0, z_beam)), client=client
+        )
         workspace.append(beam)
 
     assert len(workspace) == 4 + 4  # 1 table, 4 posts, 4 beams
@@ -160,7 +147,9 @@ class StackingEnvironment:
         self.client.configureDebugVisualizer(p.COV_ENABLE_SHADOWS, 0)
 
         self.table, self.obstacles = create_default_env(client=self.client)
-        self.table_width, self.table_length, self.table_height = get_aabb_extent(TABLE_AABB)
+        self.table_width, self.table_length, self.table_height = get_aabb_extent(
+            TABLE_AABB
+        )
 
         # Option parameters.
         self._offset_z = 0.01
@@ -168,6 +157,7 @@ class StackingEnvironment:
         # Object parameters.
         self._obj_mass = 0.5
         self._obj_friction = 1.2
+        self._obj_restitution = 0.8
         self._obj_colors = [
             (0.95, 0.05, 0.1, 1.0),
             (0.05, 0.95, 0.1, 1.0),
@@ -201,6 +191,7 @@ class StackingEnvironment:
                         half_extents,
                         self._obj_mass,
                         self._obj_friction,
+                        self._obj_restitution,
                         self._default_orn,
                         client=self.client,
                     )
@@ -227,8 +218,12 @@ class StackingEnvironment:
     def add_bandu_objects(self):
         bounding_boxes = []
         block_ids = []
-        bandu_model_path = os.path.join(os.path.dirname(__file__), "models", "bandu_simplified")
-        bandu_filenames = [f for f in listdir(bandu_model_path) if isfile(join(bandu_model_path, f))]
+        bandu_model_path = os.path.join(
+            os.path.dirname(__file__), "models", "bandu_simplified"
+        )
+        bandu_filenames = [
+            f for f in listdir(bandu_model_path) if isfile(join(bandu_model_path, f))
+        ]
         bandu_urdfs = [f for f in bandu_filenames if f.endswith("urdf")]
         for i in range(self.num_blocks):
             bandu_urdf = os.path.join(bandu_model_path, random.choice(bandu_urdfs))
@@ -240,8 +235,12 @@ class StackingEnvironment:
     def add_random_objects(self):
         bounding_boxes = []
         block_ids = []
-        random_model_path = os.path.join(os.path.dirname(__file__), "models", "random_models")
-        random_filenames = [f for f in listdir(random_model_path) if isfile(join(random_model_path, f))]
+        random_model_path = os.path.join(
+            os.path.dirname(__file__), "models", "random_models"
+        )
+        random_filenames = [
+            f for f in listdir(random_model_path) if isfile(join(random_model_path, f))
+        ]
         random_urdfs = [f for f in random_filenames if f.endswith("urdf")]
         for i in range(self.num_blocks):
             random_urdf = os.path.join(random_model_path, random.choice(random_urdfs))
@@ -271,7 +270,9 @@ class StackingEnvironment:
             while not found_collision_free or timeout > 0:
                 timeout -= 1
 
-                rx = random.uniform(self.table_width / 6.0, TABLE_POSE[0][0] + self.table_width / 3.0)
+                rx = random.uniform(
+                    self.table_width / 6.0, TABLE_POSE[0][0] + self.table_width / 3.0
+                )
                 ry = random.uniform(
                     TABLE_POSE[0][1] - self.table_length / 2.0 + padding,
                     TABLE_POSE[0][1] + self.table_length / 2.0 - padding,
@@ -283,7 +284,9 @@ class StackingEnvironment:
                 )
                 collision = False
                 for placed_block in self.block_ids[:block_index]:
-                    if pairwise_collision(block_id, placed_block, client=self.client, max_distance=1e-2):
+                    if pairwise_collision(
+                        block_id, placed_block, client=self.client, max_distance=1e-2
+                    ):
                         collision = True
                         break
                 if not collision:
@@ -310,7 +313,9 @@ class StackingEnvironment:
     def state_diff(self, s1, s2):
         return sum(
             [
-                np.linalg.norm(np.array(s1.block_poses[i][0]) - np.array(s2.block_poses[i][0]))
+                np.linalg.norm(
+                    np.array(s1.block_poses[i][0]) - np.array(s2.block_poses[i][0])
+                )
                 for i in range(self.num_blocks)
             ]
         )
@@ -334,7 +339,9 @@ class StackingEnvironment:
 
     def in_contact(self, grasp_block):
         for placed_block in self.block_ids:
-            if placed_block != grasp_block and pairwise_collision(grasp_block, placed_block, client=self.client):
+            if placed_block != grasp_block and pairwise_collision(
+                grasp_block, placed_block, client=self.client
+            ):
                 return True
         return False
 

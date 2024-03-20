@@ -1,6 +1,5 @@
-"""
-Helper functions for simulation-based inference (SBI) using the sbi toolbox.
-"""
+"""Helper functions for simulation-based inference (SBI) using the sbi
+toolbox."""
 
 import numpy as np
 import pybullet as p

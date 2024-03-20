@@ -4,7 +4,17 @@ from collections import defaultdict, namedtuple
 
 import numpy as np
 import trimesh
-from pybullet_tools.utils import (
+from scipy.spatial.transform import Rotation as R
+from tqdm import tqdm
+
+from bandu_stacking.bandu_utils import check_collision, mesh_from_obj
+from bandu_stacking.env import TABLE_AABB, get_absolute_pose
+from bandu_stacking.env_utils import (
+    GroupConf,
+    RelativePose,
+    Sequence,
+)
+from bandu_stacking.pb_utils import (
     Euler,
     Point,
     Pose,
@@ -12,24 +22,13 @@ from pybullet_tools.utils import (
     get_pose,
     stable_z_on_aabb,
 )
-from scipy.spatial.transform import Rotation as R
-from tqdm import tqdm
-
-from bandu_stacking.bandu_utils import check_collision, mesh_from_obj
-from bandu_stacking.env import TABLE_AABB, get_absolute_pose
-from bandu_stacking.policies.planning.entities import WORLD_BODY
-from bandu_stacking.policies.planning.primitives import (
-    GroupConf,
-    RelativePose,
-    Sequence,
-)
-from bandu_stacking.policies.planning.streams import (
+from bandu_stacking.policies.policy import Action, Policy
+from bandu_stacking.streams import (
     get_grasp_gen_fn,
     get_plan_motion_fn,
     get_plan_pick_fn,
     get_plan_place_fn,
 )
-from bandu_stacking.policies.policy import Action, Policy
 
 OOBB = namedtuple("OOBB", ["aabb", "pose"])
 
@@ -39,7 +38,10 @@ def aabb_height(aabb):
 
 
 def get_initial_configurations(robot, client):
-    return {group: GroupConf(robot, group, important=True, client=client) for group in robot.groups}
+    return {
+        group: GroupConf(robot, group, important=True, client=client)
+        for group in robot.groups
+    }
 
 
 def get_random_placement_pose(obj, surface_aabb, client):
@@ -63,7 +65,9 @@ def find_pick_plan(GROUP, obj, pose, grasp, base_conf, pick_planner):
 def find_place_plan(GROUP, obj, place_pose, grasp, base_conf, place_planner, client):
     place = None
     while not place:
-        place_rp = RelativePose(obj, parent=WORLD_BODY, relative_pose=place_pose, client=client)
+        place_rp = RelativePose(
+            obj, parent=None, relative_pose=place_pose, client=client
+        )
         place = place_planner(GROUP, obj, place_rp, grasp, base_conf)
     return place
 
@@ -71,7 +75,9 @@ def find_place_plan(GROUP, obj, place_pose, grasp, base_conf, place_planner, cli
 def find_motion_plan(GROUP, start_conf, end_conf, motion_planner, attachments=[]):
     motion_plan = None
     while not motion_plan:
-        (motion_plan,) = motion_planner(GROUP, start_conf, end_conf, attachments=attachments)
+        (motion_plan,) = motion_planner(
+            GROUP, start_conf, end_conf, attachments=attachments
+        )
     return motion_plan
 
 
@@ -86,8 +92,12 @@ def get_pick_place_plan(abstract_action, env):
     placement_pose = get_absolute_pose(target_pose, abstract_action)
 
     motion_planner = get_plan_motion_fn(robot, environment=env.block_ids, client=client)
-    pick_planner, place_planner = get_plan_pick_fn(robot, client=client), get_plan_place_fn(robot, client=client)
-    grasp_finder = get_grasp_gen_fn(robot, env.block_ids, grasp_mode="top", client=client)
+    pick_planner, place_planner = get_plan_pick_fn(
+        robot, client=client
+    ), get_plan_place_fn(robot, client=client)
+    grasp_finder = get_grasp_gen_fn(
+        robot, env.block_ids, grasp_mode="top", client=client
+    )
 
     init_confs = get_initial_configurations(robot, client)
     pose, base_conf = RelativePose(obj, client=client), init_confs["base"]
@@ -101,14 +111,18 @@ def get_pick_place_plan(abstract_action, env):
     if placement_pose is None:
         placement_pose = get_random_placement_pose(obj, surface_aabb, client)
 
-    place = find_place_plan(GROUP, obj, placement_pose, grasp, base_conf, place_planner, client)
+    place = find_place_plan(
+        GROUP, obj, placement_pose, grasp, base_conf, place_planner, client
+    )
     q3, at2 = place
 
     _, _, tool_name = robot.manipulators[robot.side_from_arm(GROUP)]
     attachment = grasp.create_attachment(robot, link=robot.link_from_name(tool_name))
 
     motion_plan1 = find_motion_plan(GROUP, q1, q2, motion_planner)
-    motion_plan2 = find_motion_plan(GROUP, q2, q3, motion_planner, attachments=[attachment])
+    motion_plan2 = find_motion_plan(
+        GROUP, q2, q3, motion_planner, attachments=[attachment]
+    )
 
     env.robot.remove_components()
 
@@ -124,14 +138,18 @@ class SkeletonPlanner(Policy):
     def planning_heuristic(self, initial_state, plan):
         """Get the height of the tower if this plan were to succeed."""
         TABLE = -1
-        on_dict = defaultdict(lambda: TABLE, {action.grasp_block: action.target_block for action in plan})
+        on_dict = defaultdict(
+            lambda: TABLE, {action.grasp_block: action.target_block for action in plan}
+        )
         height_dict = {TABLE: self.env.table_height}
 
         def get_height(obj):
             if obj in height_dict.keys():
                 return height_dict[obj]
             else:
-                height = aabb_height(self.env.bounding_boxes[self.env.block_ids.index(obj)])
+                height = aabb_height(
+                    self.env.bounding_boxes[self.env.block_ids.index(obj)]
+                )
                 height_dict[obj] = get_height(on_dict[obj]) + height
                 return height_dict[obj]
 
@@ -163,14 +181,20 @@ class SkeletonPlanner(Policy):
 
                 source_options = list(
                     set(initial_state.block_ids)
-                    - set([target_object] + [p.grasp_block for p in skeleton] + [p.target_block for p in skeleton])
+                    - set(
+                        [target_object]
+                        + [p.grasp_block for p in skeleton]
+                        + [p.target_block for p in skeleton]
+                    )
                 )
                 if len(source_options) == 0:
                     break
 
                 source_object = random.choice(source_options)
 
-                action = self.sample_constrained_action(source_object, target_object, mesh_info)
+                action = self.sample_constrained_action(
+                    source_object, target_object, mesh_info
+                )
                 if check_collision(state, action, client=self.env.client):
                     collision = True
                     break
@@ -181,7 +205,9 @@ class SkeletonPlanner(Policy):
                 plan_skeletons.append(skeleton)
         return plan_skeletons
 
-    def sample_constrained_action(self, source_obj, target_obj, mesh_info, best_face=False):
+    def sample_constrained_action(
+        self, source_obj, target_obj, mesh_info, best_face=False
+    ):
         if best_face:
             # Place the object on its largest face
             mesh_dict = mesh_info[source_obj]

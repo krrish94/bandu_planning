@@ -32,11 +32,19 @@ def create_args():
         action="store_true",
         help="Find plans with IK, grasp, and collision constraints",
     )
-    parser.add_argument("--real-execute", action="store_true", help="Execute on the real robot")
-    parser.add_argument("--real-camera", action="store_true", help="Use real camera data")
-    parser.add_argument("--vis", action="store_false", help="View the pybullet gui when planning")
+    parser.add_argument(
+        "--real-execute", action="store_true", help="Execute on the real robot"
+    )
+    parser.add_argument(
+        "--real-camera", action="store_true", help="Use real camera data"
+    )
+    parser.add_argument(
+        "--vis", action="store_false", help="View the pybullet gui when planning"
+    )
     parser.add_argument("--object-set", default="blocks", choices=object_sets)
-    parser.add_argument("--algorithm", default="skeleton_planner", choices=list(algorithms.keys()))
+    parser.add_argument(
+        "--algorithm", default="skeleton_planner", choices=list(algorithms.keys())
+    )
     args = parser.parse_args()
     return args
 
@@ -47,7 +55,9 @@ def main():
     if args.real_execute or args.real_camera:
         raise NotImplementedError
 
-    env = StackingEnvironment(object_set=args.object_set, num_blocks=args.num_blocks, gui=args.vis)
+    env = StackingEnvironment(
+        object_set=args.object_set, num_blocks=args.num_blocks, gui=args.vis
+    )
 
     policy = algorithms[args.algorithm](env)
     env.client.resetDebugVisualizerCamera(
@@ -63,7 +73,9 @@ def main():
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
     # Create a video recorder object
-    video_recorder = p.startStateLogging(p.STATE_LOGGING_VIDEO_MP4, f"generated_videos/{timestamp}.mp4")
+    video_recorder = p.startStateLogging(
+        p.STATE_LOGGING_VIDEO_MP4, f"generated_videos/{timestamp}.mp4"
+    )
 
     rewards = []
     for _ in range(args.num_exps):
