@@ -36,6 +36,8 @@ from bandu_stacking.pb_utils import (
     set_pose,
     stable_z_on_aabb,
     tform_point,
+    BodySaver,
+    pairwise_collisions
 )
 from bandu_stacking.policies.planning.entities import WORLD_BODY, ParentBody
 from bandu_stacking.policies.planning.grasping import generate_mesh_grasps
@@ -147,7 +149,7 @@ def get_grasp_candidates(
     obj_aabb,
     obj_pose,
     grasp_mode="mesh",
-    gripper_width=INF,
+    gripper_width=np.inf,
     tool_pose=TOOL_POSE,
     **kwargs,
 ):
@@ -181,7 +183,7 @@ def get_grasp_gen_fn(
     gripper_collisions=True,
     closed_fraction=5e-2,
     max_time=60,
-    max_attempts=INF,
+    max_attempts=np.inf,
     **kwargs,
 ):
     grasp_mode = grasp_mode.split("_")[0]
@@ -464,7 +466,7 @@ def get_placement_gen_fn(
     other_obstacles,
     environment=[],
     buffer=2e-2,
-    max_distance=INF,
+    max_distance=np.inf,
     max_attempts=100,
     **kwargs,
 ):  # max_distance=PR2_WINGSPAN
@@ -788,7 +790,7 @@ def get_plan_drop_fn(robot, environment=[], z_offset=2e-2, shrink=0.25, **kwargs
 
         # reference_pose = unit_pose()
         reference_pose = multiply(
-            Pose(euler=Euler(pitch=PI / 2, yaw=random.uniform(0, 2 * PI))), grasp.value
+            Pose(euler=Euler(pitch=np.pi / 2, yaw=random.uniform(0, 2 * np.pi))), grasp.value
         )
         # obj_pose = sample_placement_on_aabb(obj, bin_aabb, top_pose=reference_pose, percent=shrink, epsilon=1e-2)
         # _, extent = approximate_as_prism(obj, reference_pose=reference_pose)
