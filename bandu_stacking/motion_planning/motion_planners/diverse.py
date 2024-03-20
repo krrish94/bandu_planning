@@ -1,11 +1,12 @@
-from itertools import combinations, product, permutations
-from scipy.spatial.kdtree import KDTree
+from itertools import combinations, permutations, product
 
 import numpy as np
+from scipy.spatial.kdtree import KDTree
 
 from .utils import INF, compute_path_cost, get_distance
 
 # TODO: shared roadmap for multi-query
+
 
 def compute_median_distance(path1, path2):
     differences = [get_distance(q1, q2) for q1, q2 in product(path1, path2)]
@@ -13,28 +14,28 @@ def compute_median_distance(path1, path2):
 
 
 def compute_minimax_distance(path1, path2):
-    overall_distance = 0.
+    overall_distance = 0.0
     for path, other in permutations([path1, path2]):
         tree = KDTree(other)
         for q1 in path:
-            #closest_distance = min(get_distance(q1, q2) for q2 in other)
-            closest_distance, closest_index = tree.query(q1, k=1, eps=0.)
+            # closest_distance = min(get_distance(q1, q2) for q2 in other)
+            closest_distance, closest_index = tree.query(q1, k=1, eps=0.0)
             overall_distance = max(overall_distance, closest_distance)
     return overall_distance
 
 
-def compute_portfolio_distance(path1, path2, min_distance=0.):
+def compute_portfolio_distance(path1, path2, min_distance=0.0):
     # TODO: generic distance_fn
     # TODO: min_distance from stats about the portfolio
     distance = compute_minimax_distance(path1, path2)
     if distance < min_distance:
-        return 0.
+        return 0.0
     return sum(compute_path_cost(path, get_distance) for path in [path1, path2])
 
 
 def score_portfolio(portfolio, **kwargs):
     # TODO: score based on collision_fn voxel overlap at different resolutions
-    score_fn = compute_minimax_distance # compute_median_distance | compute_minimax_distance | compute_portfolio_distance
+    score_fn = compute_minimax_distance  # compute_median_distance | compute_minimax_distance | compute_portfolio_distance
     score = INF
     for path1, path2 in combinations(portfolio, r=2):
         score = min(score, score_fn(path1, path2, **kwargs))
@@ -52,9 +53,10 @@ def exhaustively_select_portfolio(candidates, k=10, **kwargs):
             best_portfolios, best_score = portfolio, score
     return best_portfolios
 
+
 def greedily_select_portfolio(candidates, k=10):
     # Higher score is better
     if len(candidates) <= k:
         return candidates
     raise NotImplementedError()
-    #return best_portfolios
+    # return best_portfolios

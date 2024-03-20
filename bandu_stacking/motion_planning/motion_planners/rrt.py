@@ -1,7 +1,7 @@
-from random import random
 import time
+from random import random
 
-from .utils import irange, argmin, RRT_ITERATIONS, apply_alpha, RED, INF, elapsed_time
+from .utils import INF, RED, RRT_ITERATIONS, apply_alpha, argmin, elapsed_time, irange
 
 
 class TreeNode(object):
@@ -10,7 +10,7 @@ class TreeNode(object):
         self.config = config
         self.parent = parent
 
-    #def retrace(self):
+    # def retrace(self):
     #    if self.parent is None:
     #        return [self]
     #    return self.parent.retrace() + [self]
@@ -29,14 +29,17 @@ class TreeNode(object):
 
     def draw(self, env, color=apply_alpha(RED, alpha=0.5)):
         # https://github.mit.edu/caelan/lis-openrave
-        from manipulation.primitives.display import draw_node, draw_edge
+        from manipulation.primitives.display import draw_edge, draw_node
+
         self.node_handle = draw_node(env, self.config, color=color)
         if self.parent is not None:
             self.edge_handle = draw_edge(
-                env, self.config, self.parent.config, color=color)
+                env, self.config, self.parent.config, color=color
+            )
 
     def __str__(self):
-        return 'TreeNode(' + str(self.config) + ')'
+        return "TreeNode(" + str(self.config) + ")"
+
     __repr__ = __str__
 
 
@@ -46,8 +49,18 @@ def configs(nodes):
     return list(map(lambda n: n.config, nodes))
 
 
-def rrt(start, goal_sample, distance_fn, sample_fn, extend_fn, collision_fn, goal_test=lambda q: False,
-        goal_probability=.2, max_iterations=RRT_ITERATIONS, max_time=INF):
+def rrt(
+    start,
+    goal_sample,
+    distance_fn,
+    sample_fn,
+    extend_fn,
+    collision_fn,
+    goal_test=lambda q: False,
+    goal_probability=0.2,
+    max_iterations=RRT_ITERATIONS,
+    max_time=INF,
+):
     """
     :param start: Start configuration - conf
     :param distance_fn: Distance function - distance_fn(q1, q2)->float

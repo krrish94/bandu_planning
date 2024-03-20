@@ -1,9 +1,11 @@
 from collections import namedtuple
+
 try:
     from collections import Mapping
 except ImportError:
     from collections.abc import Mapping
-from heapq import heappush, heappop
+
+from heapq import heappop, heappush
 
 
 class Vertex(object):
@@ -13,7 +15,7 @@ class Vertex(object):
         self.edges = []
 
     def __repr__(self):
-        return self.__class__.__name__ + '(' + str(self.value) + ')'
+        return self.__class__.__name__ + "(" + str(self.value) + ")"
 
 
 class Edge(object):
@@ -25,9 +27,17 @@ class Edge(object):
         self.cost = cost
 
     def __repr__(self):
-        return self.__class__.__name__ + '(' + str(self.v1.value) + ' -> ' + str(self.v2.value) + ')'
+        return (
+            self.__class__.__name__
+            + "("
+            + str(self.v1.value)
+            + " -> "
+            + str(self.v2.value)
+            + ")"
+        )
 
-SearchNode = namedtuple('SearchNode', ['cost', 'edge'])
+
+SearchNode = namedtuple("SearchNode", ["cost", "edge"])
 
 
 class Graph(Mapping, object):

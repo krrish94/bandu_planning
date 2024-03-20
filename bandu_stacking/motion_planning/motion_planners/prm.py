@@ -1,16 +1,26 @@
 from collections import namedtuple
+
 try:
     from collections import Mapping
 except ImportError:
     from collections.abc import Mapping
-from heapq import heappop, heappush
+
 import operator
 import time
+from heapq import heappop, heappush
 
-from .utils import INF, get_pairs, merge_dicts, flatten, RED, apply_alpha, default_selector
-
+from .utils import (
+    INF,
+    RED,
+    apply_alpha,
+    default_selector,
+    flatten,
+    get_pairs,
+    merge_dicts,
+)
 
 # TODO - Visibility-PRM, PRM*
+
 
 class Vertex(object):
 
@@ -25,10 +35,12 @@ class Vertex(object):
     def draw(self, env, color=apply_alpha(RED, alpha=0.5)):
         # https://github.mit.edu/caelan/lis-openrave
         from manipulation.primitives.display import draw_node
+
         self._handle = draw_node(env, self.q, color=color)
 
     def __str__(self):
-        return 'Vertex(' + str(self.q) + ')'
+        return "Vertex(" + str(self.q) + ")"
+
     __repr__ = __str__
 
 
@@ -38,7 +50,7 @@ class Edge(object):
         self.v1, self.v2 = v1, v2
         self.v1.edges[v2], self.v2.edges[v1] = self, self
         self._path = path
-        #self._handle = None
+        # self._handle = None
         self._handles = []
 
     def end(self, start):
@@ -63,7 +75,7 @@ class Edge(object):
         return [self.v1.q] + self._path + [self.v2.q]
 
     def clear(self):
-        #self._handle = None
+        # self._handle = None
         self._handles = []
 
     def draw(self, env, color=apply_alpha(RED, alpha=0.5)):
@@ -71,17 +83,20 @@ class Edge(object):
             return
         # https://github.mit.edu/caelan/lis-openrave
         from manipulation.primitives.display import draw_edge
-        #self._handle = draw_edge(env, self.v1.q, self.v2.q, color=color)
+
+        # self._handle = draw_edge(env, self.v1.q, self.v2.q, color=color)
         for q1, q2 in get_pairs(self.configs()):
             self._handles.append(draw_edge(env, q1, q2, color=color))
 
     def __str__(self):
-        return 'Edge(' + str(self.v1.q) + ' - ' + str(self.v2.q) + ')'
+        return "Edge(" + str(self.v1.q) + " - " + str(self.v2.q) + ")"
+
     __repr__ = __str__
+
 
 ##################################################
 
-SearchNode = namedtuple('SearchNode', ['cost', 'parent'])
+SearchNode = namedtuple("SearchNode", ["cost", "parent"])
 
 
 class Roadmap(Mapping, object):
@@ -157,10 +172,8 @@ class Roadmap(Mapping, object):
     @staticmethod
     def merge(*roadmaps):
         new_roadmap = Roadmap()
-        new_roadmap.vertices = merge_dicts(
-            *[roadmap.vertices for roadmap in roadmaps])
-        new_roadmap.edges = list(
-            flatten(roadmap.edges for roadmap in roadmaps))
+        new_roadmap.vertices = merge_dicts(*[roadmap.vertices for roadmap in roadmaps])
+        new_roadmap.edges = list(flatten(roadmap.edges for roadmap in roadmaps))
         return new_roadmap
 
 
@@ -189,7 +202,9 @@ class PRM(Roadmap):
         def retrace(v):
             if nodes[v].parent is None:
                 return [v.q]
-            return retrace(nodes[v].parent) + v.edges[nodes[v].parent].path(nodes[v].parent)
+            return retrace(nodes[v].parent) + v.edges[nodes[v].parent].path(
+                nodes[v].parent
+            )
 
         while len(queue) != 0:
             _, cv = heappop(queue)
@@ -205,20 +220,25 @@ class PRM(Roadmap):
                     heappush(queue, (cost + heuristic(nv), nv))
         return None
 
+
 ##################################################
+
 
 class DistancePRM(PRM):
 
-    def __init__(self, distance_fn, extend_fn, collision_fn, samples=[], connect_distance=.5):
+    def __init__(
+        self, distance_fn, extend_fn, collision_fn, samples=[], connect_distance=0.5
+    ):
         self.connect_distance = connect_distance
         super(self.__class__, self).__init__(
-            distance_fn, extend_fn, collision_fn, samples=samples)
+            distance_fn, extend_fn, collision_fn, samples=samples
+        )
 
     def grow(self, samples):
         old_vertices = self.vertices.keys()
         new_vertices = self.add(samples)
         for i, v1 in enumerate(new_vertices):
-            for v2 in new_vertices[i + 1:] + old_vertices:
+            for v2 in new_vertices[i + 1 :] + old_vertices:
                 if self.distance_fn(v1.q, v2.q) <= self.connect_distance:
                     path = list(self.extend_fn(v1.q, v2.q))[:-1]
                     if not any(self.collision_fn(q) for q in default_selector(path)):
@@ -228,11 +248,20 @@ class DistancePRM(PRM):
 
 class DegreePRM(PRM):
 
-    def __init__(self, distance_fn, extend_fn, collision_fn, samples=[], target_degree=4, connect_distance=INF):
+    def __init__(
+        self,
+        distance_fn,
+        extend_fn,
+        collision_fn,
+        samples=[],
+        target_degree=4,
+        connect_distance=INF,
+    ):
         self.target_degree = target_degree
         self.connect_distance = connect_distance
         super(self.__class__, self).__init__(
-            distance_fn, extend_fn, collision_fn, samples=samples)
+            distance_fn, extend_fn, collision_fn, samples=samples
+        )
 
     def grow(self, samples):
         # TODO: do sorted edges version
@@ -241,9 +270,16 @@ class DegreePRM(PRM):
             return new_vertices
         for v1 in new_vertices:
             degree = 0
-            for _, v2 in sorted(filter(lambda pair: (pair[1] != v1) and (pair[0] <= self.connect_distance),
-                                       map(lambda v: (self.distance_fn(v1.q, v.q), v), self.vertices.values())),
-                                key=operator.itemgetter(0)): # TODO - slow, use nearest neighbors
+            for _, v2 in sorted(
+                filter(
+                    lambda pair: (pair[1] != v1) and (pair[0] <= self.connect_distance),
+                    map(
+                        lambda v: (self.distance_fn(v1.q, v.q), v),
+                        self.vertices.values(),
+                    ),
+                ),
+                key=operator.itemgetter(0),
+            ):  # TODO - slow, use nearest neighbors
                 if self.target_degree <= degree:
                     break
                 if v2 not in v1.edges:
@@ -255,10 +291,21 @@ class DegreePRM(PRM):
                     degree += 1
         return new_vertices
 
+
 ##################################################
 
-def prm(start, goal, distance_fn, sample_fn, extend_fn, collision_fn,
-        target_degree=4, connect_distance=INF, num_samples=100): #, max_time=INF):
+
+def prm(
+    start,
+    goal,
+    distance_fn,
+    sample_fn,
+    extend_fn,
+    collision_fn,
+    target_degree=4,
+    connect_distance=INF,
+    num_samples=100,
+):  # , max_time=INF):
     """
     :param start: Start configuration - conf
     :param goal: End configuration - conf
@@ -274,9 +321,20 @@ def prm(start, goal, distance_fn, sample_fn, extend_fn, collision_fn,
     goal = tuple(goal)
     samples = [start, goal] + [tuple(sample_fn()) for _ in range(num_samples)]
     if target_degree is None:
-        roadmap = DistancePRM(distance_fn, extend_fn, collision_fn, samples=samples,
-                              connect_distance=connect_distance)
+        roadmap = DistancePRM(
+            distance_fn,
+            extend_fn,
+            collision_fn,
+            samples=samples,
+            connect_distance=connect_distance,
+        )
     else:
-        roadmap = DegreePRM(distance_fn, extend_fn, collision_fn, samples=samples,
-                            target_degree=target_degree, connect_distance=connect_distance)
+        roadmap = DegreePRM(
+            distance_fn,
+            extend_fn,
+            collision_fn,
+            samples=samples,
+            target_degree=target_degree,
+            connect_distance=connect_distance,
+        )
     return roadmap(start, goal)

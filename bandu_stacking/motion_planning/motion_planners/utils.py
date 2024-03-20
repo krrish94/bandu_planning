@@ -1,15 +1,15 @@
-from random import shuffle
-from itertools import islice
-from collections import deque, defaultdict, namedtuple
-import time
 import contextlib
-import pstats
 import cProfile
+import pstats
 import random
+import time
+from collections import defaultdict, deque, namedtuple
+from itertools import islice
+from random import shuffle
 
 import numpy as np
 
-INF = float('inf')
+INF = float("inf")
 PI = np.pi
 
 
@@ -20,9 +20,9 @@ RRT_SMOOTHING = 20
 
 
 try:
-   user_input = raw_input
+    user_input = raw_input
 except NameError:
-   user_input = input
+    user_input = input
 
 
 RED = (1, 0, 0)
@@ -30,15 +30,16 @@ GREEN = (0, 1, 0)
 BLUE = (0, 0, 1)
 
 
-Interval = namedtuple('Interval', ['lower', 'upper']) # AABB
-UNIT_LIMITS = Interval(0., 1.)
+Interval = namedtuple("Interval", ["lower", "upper"])  # AABB
+UNIT_LIMITS = Interval(0.0, 1.0)
 CIRCULAR_LIMITS = Interval(-PI, PI)
 UNBOUNDED_LIMITS = Interval(-INF, INF)
 
 ##################################################
 
-def apply_alpha(color, alpha=1.):
-   return tuple(color[:3]) + (alpha,)
+
+def apply_alpha(color, alpha=1.0):
+    return tuple(color[:3]) + (alpha,)
 
 
 def irange(start, stop=None, step=1):  # np.arange
@@ -99,19 +100,21 @@ def is_odd(num):
 def bisect(sequence):
     sequence = list(sequence)
     indices = set()
-    queue = deque([(0, len(sequence)-1)])
+    queue = deque([(0, len(sequence) - 1)])
     while queue:
         lower, higher = queue.popleft()
         if lower > higher:
             continue
-        index = int((lower + higher) / 2.)
+        index = int((lower + higher) / 2.0)
         assert index not in indices
-        #if is_even(higher - lower):
+        # if is_even(higher - lower):
         yield sequence[index]
-        queue.extend([
-            (lower, index-1),
-            (index+1, higher),
-        ])
+        queue.extend(
+            [
+                (lower, index - 1),
+                (index + 1, higher),
+            ]
+        )
 
 
 def take(iterable, n=INF):
@@ -124,8 +127,8 @@ def take(iterable, n=INF):
 
 def enum(*sequential, **named):
     enums = dict(zip(sequential, range(len(sequential))), **named)
-    enums['names'] = sorted(enums.keys(), key=lambda k: enums[k])
-    return type('Enum', (), enums)
+    enums["names"] = sorted(enums.keys(), key=lambda k: enums[k])
+    return type("Enum", (), enums)
 
 
 def elapsed_time(start_time):
@@ -133,12 +136,12 @@ def elapsed_time(start_time):
 
 
 @contextlib.contextmanager
-def profiler(field='tottime', num=10):
+def profiler(field="tottime", num=10):
     pr = cProfile.Profile()
     pr.enable()
     yield
     pr.disable()
-    pstats.Stats(pr).sort_stats(field).print_stats(num) # cumtime | tottime
+    pstats.Stats(pr).sort_stats(field).print_stats(num)  # cumtime | tottime
 
 
 def inf_sequence():
@@ -163,7 +166,9 @@ def get_sign(x):
 def strictly_increasing(sequence):
     return all(x2 > x1 for x1, x2 in get_pairs(sequence))
 
+
 ##################################################
+
 
 def get_delta(q1, q2):
     return np.array(q2) - np.array(q1)
@@ -191,7 +196,7 @@ def is_path(path):
 def compute_path_cost(path, cost_fn=get_distance):
     if not is_path(path):
         return INF
-    #path = waypoints_from_path(path)
+    # path = waypoints_from_path(path)
     return sum(cost_fn(*pair) for pair in get_pairs(path))
 
 
@@ -206,7 +211,9 @@ def remove_redundant(path, tolerance=1e-3):
     new_path = [path[0]]
     for conf in path[1:]:
         difference = get_difference(new_path[-1], np.array(conf))
-        if not np.allclose(np.zeros(len(difference)), difference, atol=tolerance, rtol=0):
+        if not np.allclose(
+            np.zeros(len(difference)), difference, atol=tolerance, rtol=0
+        ):
             new_path.append(conf)
     return new_path
 
@@ -232,14 +239,18 @@ def waypoints_from_path(path, difference_fn=None, tolerance=1e-3):
 
 
 def refine_waypoints(waypoints, extend_fn):
-    #if len(waypoints) <= 1:
+    # if len(waypoints) <= 1:
     #    return waypoints
-    return list(flatten(extend_fn(q1, q2) for q1, q2 in get_pairs(waypoints))) # [waypoints[0]] +
+    return list(
+        flatten(extend_fn(q1, q2) for q1, q2 in get_pairs(waypoints))
+    )  # [waypoints[0]] +
+
 
 ##################################################
 
+
 def convex_combination(x, y, w=0.5):
-    return (1-w)*np.array(x) + w*np.array(y)
+    return (1 - w) * np.array(x) + w * np.array(y)
 
 
 def uniform_generator(d):
@@ -252,15 +263,16 @@ def halton_generator(d, seed=None):
     # TODO: apply random noise on top
     # https://ghalton.readthedocs.io/en/latest/
     import ghalton
+
     if seed is None:
-        seed = random.randint(0, 100-1) # ghalton.EA_PERMS[d-1]
-    #ghalton.PRIMES, ghalton.EA_PERMS
-    #sequencer = ghalton.Halton(d)
-    #sequencer = ghalton.GeneralizedHalton(d, seed) # TODO: seed not working
+        seed = random.randint(0, 100 - 1)  # ghalton.EA_PERMS[d-1]
+    # ghalton.PRIMES, ghalton.EA_PERMS
+    # sequencer = ghalton.Halton(d)
+    # sequencer = ghalton.GeneralizedHalton(d, seed) # TODO: seed not working
     sequencer = ghalton.GeneralizedHalton(ghalton.EA_PERMS[:d])
-    #sequencer.reset()
-    #sequencer.seed(seed) # TODO: seed not working
-    sequencer.get(seed) # Burn this number of values
+    # sequencer.reset()
+    # sequencer.seed(seed) # TODO: seed not working
+    sequencer.get(seed)  # Burn this number of values
     while True:
         [weights] = sequencer.get(1)
         yield np.array(weights)
@@ -272,7 +284,7 @@ def unit_generator(d, use_halton=False, **kwargs):
         try:
             import ghalton
         except ImportError:
-            print('ghalton is not installed (https://pypi.org/project/ghalton/)')
+            print("ghalton is not installed (https://pypi.org/project/ghalton/)")
             use_halton = False
     return halton_generator(d, **kwargs) if use_halton else uniform_generator(d)
 
@@ -282,10 +294,14 @@ def interval_generator(lower, upper, **kwargs):
     assert np.less_equal(lower, upper).all()
     if np.equal(lower, upper).all():
         return iter([lower])
-    return (convex_combination(lower, upper, w=weights)
-            for weights in unit_generator(d=len(lower), **kwargs))
+    return (
+        convex_combination(lower, upper, w=weights)
+        for weights in unit_generator(d=len(lower), **kwargs)
+    )
+
 
 ##################################################
+
 
 def forward_selector(path):
     return path
@@ -303,24 +319,28 @@ def bisect_selector(path):
     return bisect(path)
 
 
-default_selector = bisect_selector # random_selector
+default_selector = bisect_selector  # random_selector
 
 ##################################################
 
+
 def is_hashable(value):
-    #return isinstance(value, Hashable) # TODO: issue with hashable and numpy 2.7.6
+    # return isinstance(value, Hashable) # TODO: issue with hashable and numpy 2.7.6
     try:
         hash(value)
     except TypeError:
         return False
     return True
 
+
 def value_or_id(value):
     if is_hashable(value):
         return value
     return id(value)
 
+
 ##################################################
+
 
 def incoming_from_edges(edges):
     incoming_vertices = defaultdict(set)
@@ -346,7 +366,9 @@ def adjacent_from_edges(edges):
         undirected_edges[v2].add(v1)
     return undirected_edges
 
+
 ##################################################
+
 
 def normalize_interval(value, interval=UNIT_LIMITS):
     # TODO: move more out of pybullet-planning
@@ -379,10 +401,12 @@ def interval_distance(value1, value2, interval=UNIT_LIMITS):
 
 def circular_difference(theta2, theta1, interval=UNIT_LIMITS):
     extent = get_interval_extent(interval)
-    diff_interval = Interval(-extent/2, +extent/2)
+    diff_interval = Interval(-extent / 2, +extent / 2)
     return wrap_interval(theta2 - theta1, interval=diff_interval)
 
+
 ##################################################
+
 
 def get_interval_center(interval):
     lower, upper = interval

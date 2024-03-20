@@ -9,7 +9,9 @@ def get_nth(generator, n=0):
     return next(islice(generator, n), None)
 
 
-def get_neighbors_fn(extend_fn, targets=[], scale=1e3, bias=False): # TODO: could also include diagonal
+def get_neighbors_fn(
+    extend_fn, targets=[], scale=1e3, bias=False
+):  # TODO: could also include diagonal
     # https://github.mit.edu/caelan/lis-openrave/blob/master/manipulation/motion/cspace.py#L171
     def neighbors_fn(current):
         d = len(current)
@@ -23,9 +25,10 @@ def get_neighbors_fn(extend_fn, targets=[], scale=1e3, bias=False): # TODO: coul
             for sign in [-1, +1]:
                 # TODO: hash the confs
                 target = tuple(np.array(current) + sign * direction)
-                #yield target
+                # yield target
                 new = get_nth(extend_fn(current, target), n=1)
                 yield new
+
     return neighbors_fn
 
 
@@ -39,7 +42,7 @@ def lattice(start, goal, extend_fn, collision_fn, distance_fn=None, **kwargs):
     :param kwargs: Keyword arguments
     :return: Path [q', ..., q"] or None if unable to find a solution
     """
-    #collision_fn = lambda q: False
+    # collision_fn = lambda q: False
     neighbors_fn = get_neighbors_fn(extend_fn, targets=[goal])
     if distance_fn is None:
         return bfs(start, goal, neighbors_fn, collision_fn, **kwargs)

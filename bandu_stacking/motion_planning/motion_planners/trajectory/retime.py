@@ -1,7 +1,6 @@
 import numpy as np
 
-from ..utils import INF, get_pairs, find, Interval
-
+from ..utils import INF, Interval, find, get_pairs
 
 EPSILON = 1e-6
 
@@ -11,7 +10,7 @@ def get_max_velocity(velocities, norm=INF):
 
 
 def check_time(t):
-    return not isinstance(t, complex) and (t >= 0.)
+    return not isinstance(t, complex) and (t >= 0.0)
 
 
 def filter_times(times):
@@ -25,10 +24,12 @@ def iterate_poly1d(poly1d):
     return enumerate(reversed(list(poly1d)))
 
 
-def parabolic_val(t=0., t0=0., x0=0., v0=0., a=0.):
-    return x0 + v0*(t - t0) + 1/2.*a*(t - t0)**2
+def parabolic_val(t=0.0, t0=0.0, x0=0.0, v0=0.0, a=0.0):
+    return x0 + v0 * (t - t0) + 1 / 2.0 * a * (t - t0) ** 2
+
 
 ##################################################
+
 
 def poly_sum(p0, *polys):
     p_total = np.poly1d(p0)
@@ -46,12 +47,14 @@ def poly_prod(p0, *polys):
 
 def separate_poly(poly):
     from scipy.interpolate import PPoly
+
     k, m, d = poly.c.shape
-    return [PPoly(c=poly.c[:,:,i], x=poly.x) for i in range(d)]
+    return [PPoly(c=poly.c[:, :, i], x=poly.x) for i in range(d)]
 
 
 def append_polys(poly1, *polys):
     from scipy.interpolate import PPoly
+
     if isinstance(poly1, MultiPPoly):
         return poly1.append(*polys)
     total_poly = poly1
@@ -65,12 +68,15 @@ def append_polys(poly1, *polys):
         c2 = np.zeros((k, m2, d2))
         c2[-k2:, ...] = poly.c
         new_xs = [total_poly.x[-1] + (x - poly.x[0]) for x in poly.x[1:]]
-        total_poly = PPoly(c=np.append(c1, c2, axis=1),
-                           x=np.append(total_poly.x, new_xs))
-        #total_poly.extend()
+        total_poly = PPoly(
+            c=np.append(c1, c2, axis=1), x=np.append(total_poly.x, new_xs)
+        )
+        # total_poly.extend()
     return total_poly
 
+
 ##################################################
+
 
 def get_times(curve):
     # TODO: rename these
@@ -107,29 +113,31 @@ def get_interval(curve, start_t=None, end_t=None):
 def poly_from_spline(spline, i, d):
     return np.poly1d([spline.c[c, i, d] for c in range(spline.c.shape[0])])
 
+
 ##################################################
 
-def curve_from_controls(durations, accels, t0=0., x0=0., v0=0.):
+
+def curve_from_controls(durations, accels, t0=0.0, x0=0.0, v0=0.0):
     assert len(durations) == len(accels)
-    #from numpy.polynomial import Polynomial
-    #t = Polynomial.identity()
+    # from numpy.polynomial import Polynomial
+    # t = Polynomial.identity()
     times = [t0]
     positions = [x0]
     velocities = [v0]
     coeffs = []
     for duration, accel in zip(durations, accels):
-        assert duration >= 0.
-        coeff = [0.5*accel, 1.*velocities[-1], positions[-1]] # 0. jerk
+        assert duration >= 0.0
+        coeff = [0.5 * accel, 1.0 * velocities[-1], positions[-1]]  # 0. jerk
         coeffs.append(coeff)
         times.append(times[-1] + duration)
-        p_curve = np.poly1d(coeff) # Not centered
+        p_curve = np.poly1d(coeff)  # Not centered
         positions.append(p_curve(duration))
-        v_curve = p_curve.deriv() # Not centered
+        v_curve = p_curve.deriv()  # Not centered
         velocities.append(v_curve(duration))
     # print(positions)
     # print(velocities)
 
-    #np.piecewise
+    # np.piecewise
     # max_order = max(p_curve.order for p_curve in p_curves)
     # coeffs = np.zeros([max_order + 1, len(p_curves), 1])
     # for i, p_curve in enumerate(p_curves):
@@ -137,21 +145,24 @@ def curve_from_controls(durations, accels, t0=0., x0=0., v0=0.):
     #     for k, c in iterate_poly1d(p_curve):
     #         coeffs[max_order - k, i] = c
     from scipy.interpolate import PPoly
+
     # TODO: check continuity
-    #from scipy.interpolate import CubicHermiteSpline
-    return PPoly(c=np.array(coeffs).T, x=times) # TODO: spline.extend
+    # from scipy.interpolate import CubicHermiteSpline
+    return PPoly(c=np.array(coeffs).T, x=times)  # TODO: spline.extend
+
 
 ##################################################
 
-def min_linear_spline(x1, x2, v_max, a_max, t0=0.):
-    #if x1 > x2:
-    #   return conservative(x2, x1, v_max, a_max)
-    assert (v_max >= 0) and (a_max >= 0) # and (x2 >= x1)
-    sign = +1 if x2 >= x1 else -1
-    v1 = v2 = 0.
-    x_half = (x1 + x2) / 2.
 
-    position_curve = np.poly1d([sign*0.5*a_max, v1, x1])
+def min_linear_spline(x1, x2, v_max, a_max, t0=0.0):
+    # if x1 > x2:
+    #   return conservative(x2, x1, v_max, a_max)
+    assert (v_max >= 0) and (a_max >= 0)  # and (x2 >= x1)
+    sign = +1 if x2 >= x1 else -1
+    v1 = v2 = 0.0
+    x_half = (x1 + x2) / 2.0
+
+    position_curve = np.poly1d([sign * 0.5 * a_max, v1, x1])
     velocity_curve = position_curve.deriv()
     t_half = filter_times((position_curve - np.poly1d([x_half])).roots)
     # solutions = np.roots([
@@ -177,11 +188,11 @@ def min_linear_spline(x1, x2, v_max, a_max, t0=0.):
     x_ramp = position_curve(t_ramp)
     d = abs(x2 - x1)
     d_ramp = abs(x_ramp - x1)
-    d_hold = d - 2*d_ramp
+    d_hold = d - 2 * d_ramp
     t_hold = abs(d_hold / v_max)
 
     durations = [t_ramp, t_hold, t_ramp]
-    accels = [sign * a_max, 0., -sign * a_max]
+    accels = [sign * a_max, 0.0, -sign * a_max]
     spline = curve_from_controls(durations, accels, t0=t0, x0=x1, v0=v1)
 
     # T = 2*t_ramp + t_hold
@@ -193,24 +204,29 @@ def min_linear_spline(x1, x2, v_max, a_max, t0=0.):
     # spline = PPoly(c=c, x=times) # TODO: extend
     return spline
 
+
 ##################################################
+
 
 def trim_end(poly, end):
     from scipy.interpolate import PPoly
+
     times = poly.x
     if end >= times[-1]:
         return poly
     if end <= times[0]:
         return None
     last = find(lambda i: times[i] <= end, reversed(range(len(times))))
-    times = list(times[:last+1]) + [end]
-    c = poly.c[:,:last+1,...]
+    times = list(times[: last + 1]) + [end]
+    c = poly.c[:, : last + 1, ...]
     return PPoly(c=c, x=times)
 
+
 def trim_start(poly, start):
-    from scipy.interpolate import PPoly, CubicHermiteSpline #, BPoly
-    #PPoly.from_bernstein_basis
-    #BPoly.from_derivatives
+    from scipy.interpolate import CubicHermiteSpline, PPoly  # , BPoly
+
+    # PPoly.from_bernstein_basis
+    # BPoly.from_derivatives
     times = poly.x
     if start <= times[0]:
         return poly
@@ -218,17 +234,20 @@ def trim_start(poly, start):
         return None
 
     first = find(lambda i: times[i] >= start, range(len(times)))
-    ts = [start, times[first]] # + start) / 2.]
+    ts = [start, times[first]]  # + start) / 2.]
     ps = [poly(t) for t in ts]
     derivative = poly.derivative()
     vs = [derivative(t) for t in ts]
     correction = CubicHermiteSpline(ts, ps, dydx=vs)
 
     times = [start] + list(times[first:])
-    c = poly.c[:,first-1:,...]
-    c[:,0,...] = correction.c[-poly.c.shape[0]:,0,...] # TODO: assert that the rest are zero
+    c = poly.c[:, first - 1 :, ...]
+    c[:, 0, ...] = correction.c[
+        -poly.c.shape[0] :, 0, ...
+    ]  # TODO: assert that the rest are zero
     poly = PPoly(c=c, x=times)
     return poly
+
 
 def trim(poly, start=None, end=None):
     if isinstance(poly, MultiPPoly):
@@ -242,7 +261,9 @@ def trim(poly, start=None, end=None):
     poly = trim_start(poly, start)
     return poly
 
+
 ##################################################
+
 
 class MultiPPoly(object):
     def __init__(self, polys):
@@ -250,123 +271,166 @@ class MultiPPoly(object):
         self.x = sorted(np.concatenate([poly.x for poly in self.polys]))
         self.x = [self.x[0]] + [x2 for x1, x2 in get_pairs(self.x) if x2 > x1 + 1e-9]
         # TODO: cache derivatives
+
     @property
     def d(self):
         return len(self.polys)
+
     @property
     def start_x(self):
         return spline_start(self)
+
     @property
     def end_x(self):
         return spline_end(self)
+
     def __call__(self, *args, **kwargs):
         return np.array([poly(*args, **kwargs) for poly in self.polys])
+
     def trim(self, *args, **wkargs):
         return MultiPPoly([trim(poly, *args, **wkargs) for poly in self.polys])
-    #def append(self, new_polys):
+
+    # def append(self, new_polys):
     #    assert len(self.polys) == len(new_polys)
     #    return MultiPPoly([append_polys(poly, new_poly) for poly, new_poly in zip(self.polys, new_polys)])
     def append(self, *multi_polys):
         d = len(self.polys)
         new_polys = []
         for k in range(d):
-            new_polys.append(append_polys(self.polys[k], *[multi_poly.polys[k] for multi_poly in multi_polys]))
+            new_polys.append(
+                append_polys(
+                    self.polys[k], *[multi_poly.polys[k] for multi_poly in multi_polys]
+                )
+            )
         return MultiPPoly(new_polys)
+
     @staticmethod
     def from_poly(poly):
         from scipy.interpolate import PPoly
+
         if isinstance(poly, MultiPPoly):
             return poly
         assert len(poly.c.shape) == 3
         d = poly.c.shape[2]
-        return MultiPPoly([PPoly(c=poly.c[...,k], x=poly.x) for k in range(d)])
+        return MultiPPoly([PPoly(c=poly.c[..., k], x=poly.x) for k in range(d)])
+
     @staticmethod
     def concatenate(self, polys):
         raise NotImplementedError()
-        #return MultiPPoly()
+        # return MultiPPoly()
+
     # def slice(self, start, stop=None):
     #     raise NotImplementedError()
     # TODO: extend
     def derivative(self, *args, **kwargs):
         return MultiPPoly([poly.derivative(*args, **kwargs) for poly in self.polys])
+
     def antiderivative(self, *args, **kwargs):
         return MultiPPoly([poly.antiderivative(*args, **kwargs) for poly in self.polys])
+
     def roots(self, *args, **kwargs):
         # TODO: roots per poly
         return np.array([poly.roots(*args, **kwargs) for poly in self.polys])
+
     def spline(self, **kwargs):
         from scipy.interpolate import CubicSpline
+
         times = self.x
         positions = [self(x) for x in times]
-        return CubicSpline(times, positions, bc_type='clamped', **kwargs)
+        return CubicSpline(times, positions, bc_type="clamped", **kwargs)
+
     def hermite_spline(self, **kwargs):
         from scipy.interpolate import CubicHermiteSpline
+
         times = self.x
         positions = [self(x) for x in times]
         derivative = self.derivative()
         velocities = [derivative(x) for x in times]
         return CubicHermiteSpline(times, positions, dydx=velocities, **kwargs)
+
     def __str__(self):
-        return '{}({})'.format(self.__class__.__name__, self.polys)
+        return "{}({})".format(self.__class__.__name__, self.polys)
+
 
 ##################################################
 
+
 class Curve(object):
-    def __init__(self, poly): # scipy.interpolate.PPoly
+    def __init__(self, poly):  # scipy.interpolate.PPoly
         # TODO: adjust start time
         # https://docs.scipy.org/doc/scipy/reference/generated/scipy.interpolate.PPoly.html#scipy.interpolate.PPoly
         self.poly = poly
         # TODO: record antiderivatives
+
     @property
     def degree(self):
         k, m, d = self.poly.c.shape
         return k
+
     @property
     def num_intervals(self):
         k, m, d = self.poly.c.shape
         return m
+
     @property
     def dim(self):
         k, m, d = self.poly.c.shape
         return d
+
     @property
     def start_t(self):
         return spline_start(self.poly)
+
     @property
     def end_t(self):
         return spline_end(self.poly)
+
     @property
-    def duration(self): # spline_duration
+    def duration(self):  # spline_duration
         return self.end_t - self.start_t
+
     @property
     def breakpoints(self):
         return self.poly.x
+
     def at(self, *args, **kwargs):
         return self.poly(*args, **kwargs)
+
     def __call__(self, *args, **kwargs):
         return self.at(*args, **kwargs)
+
     # TODO: way of inheriting these instead
     def extrema(self, **kwargs):
         return find_extrema(self.poly, **kwargs)
+
     def derivative(self, *args, **kwargs):
         return Curve(self.poly.derivative(*args, **kwargs))
+
     def antiderivative(self, *args, **kwargs):
         return Curve(self.poly.antiderivative(*args, **kwargs))
+
     def roots(self, *args, **kwargs):
         return self.poly.roots(*args, **kwargs)
+
     def solve(self, *args, **kwargs):
         # TODO: solve for a bunch of y
         return self.poly.solve_tamp(*args, **kwargs)
-    def sample_times(self, dt=1./60):
+
+    def sample_times(self, dt=1.0 / 60):
         return np.append(np.arange(self.start_t, self.end_t, step=dt), [self.end_t])
+
     def sample(self, *args, **kwargs):
         for t in self.sample_times(*args, **kwargs):
             yield self.at(t)
+
     def __str__(self):
-        return '{}(d={}, t=[{:.2f},{:.2f}])'.format(
-            self.__class__.__name__, self.dim, self.start_t, self.end_t)
+        return "{}(d={}, t=[{:.2f},{:.2f}])".format(
+            self.__class__.__name__, self.dim, self.start_t, self.end_t
+        )
+
 
 ##################################################
+
 
 def filter_extrema(curve, times, start_t=None, end_t=None):
     # TODO: unify with filter_times

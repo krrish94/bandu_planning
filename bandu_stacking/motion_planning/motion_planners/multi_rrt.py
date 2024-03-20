@@ -2,12 +2,13 @@ try:
     from collections import Mapping
 except ImportError:
     from collections.abc import Mapping
+
 from random import random
 
 from .rrt import TreeNode, configs
-from .utils import irange, argmin, get_pairs, randomize, take, enum
+from .utils import argmin, enum, get_pairs, irange, randomize, take
 
-ts = enum('ALL', 'SUCCESS', 'PATH', 'NONE')
+ts = enum("ALL", "SUCCESS", "PATH", "NONE")
 
 # TODO - resample and use nearest neighbors when the tree is large
 # TODO - possible bug if a node is already in the tree
@@ -29,6 +30,7 @@ class MultiTree(Mapping, object):
 
     def __getitem__(self, q):
         return self.nodes[q]
+
     #  return first(lambda v: self.distance_fn(v.config, q) < 1e-6, self.nodes)
 
     def __len__(self):
@@ -57,7 +59,7 @@ class MultiTree(Mapping, object):
                 break
         else:
             i += 1
-        return configs(path1[:i - 1:-1] + path2[i - 1:])
+        return configs(path1[: i - 1 : -1] + path2[i - 1 :])
 
     def clear(self):
         for n in self:
@@ -70,17 +72,22 @@ class MultiTree(Mapping, object):
 
 class MultiRRT(MultiTree):
 
-    def grow(self, goal_sample, iterations=50, goal_probability=.2, store=ts.PATH, max_tree_size=500):
+    def grow(
+        self,
+        goal_sample,
+        iterations=50,
+        goal_probability=0.2,
+        store=ts.PATH,
+        max_tree_size=500,
+    ):
         if not callable(goal_sample):
             goal_sample = lambda: goal_sample
-        nodes, new_nodes = list(
-            take(randomize(self.nodes.values()), max_tree_size)), []
+        nodes, new_nodes = list(take(randomize(self.nodes.values()), max_tree_size)), []
         for i in irange(iterations):
             goal = random() < goal_probability or i == 0
             s = goal_sample() if goal else self.sample_fn()
 
-            last = argmin(lambda n: self.distance_fn(
-                n.config, s), nodes + new_nodes)
+            last = argmin(lambda n: self.distance_fn(n.config, s), nodes + new_nodes)
             for q in self.extend_fn(last.config, s):
                 if self.collision_fn(q):
                     break
@@ -107,8 +114,10 @@ class MultiBiRRT(MultiTree):
             return self[goal].retrace()
         if self.collision_fn(goal):
             return None
-        nodes1, new_nodes1 = list(
-            take(randomize(self.nodes.values()), max_tree_size)), []
+        nodes1, new_nodes1 = (
+            list(take(randomize(self.nodes.values()), max_tree_size)),
+            [],
+        )
         nodes2, new_nodes2 = [], [TreeNode(goal)]
         for _ in irange(iterations):
             if len(nodes1) + len(new_nodes1) > len(nodes2) + len(new_nodes2):
@@ -116,16 +125,16 @@ class MultiBiRRT(MultiTree):
                 new_nodes1, new_nodes2 = new_nodes2, new_nodes1
 
             s = self.sample_fn()
-            last1 = argmin(lambda n: self.distance_fn(
-                n.config, s), nodes1 + new_nodes1)
+            last1 = argmin(lambda n: self.distance_fn(n.config, s), nodes1 + new_nodes1)
             for q in self.extend_fn(last1.config, s):
                 if self.collision_fn(q):
                     break
                 last1 = TreeNode(q, parent=last1)
                 new_nodes1.append(last1)
 
-            last2 = argmin(lambda n: self.distance_fn(
-                n.config, last1.config), nodes2 + new_nodes2)
+            last2 = argmin(
+                lambda n: self.distance_fn(n.config, last1.config), nodes2 + new_nodes2
+            )
             for q in self.extend_fn(last2.config, last1.config):
                 if self.collision_fn(q):
                     break
