@@ -146,6 +146,9 @@ class CollisionPair:
     body: int
     links: List[int]
 
+    def __int__(self):
+        return int(self.body)
+
 
 @dataclass
 class AABB:

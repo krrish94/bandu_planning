@@ -347,6 +347,7 @@ def get_plan_place_fn(robot, **kwargs):
         base_conf.assign()
         arm_path = plan_prehensile(robot, obj, pose, grasp, **kwargs)
         if arm_path is None:
+            print("[plan_place_fn] arm_path is None")
             return None
 
         arm_traj = GroupTrajectory(
@@ -537,14 +538,14 @@ def get_plan_motion_fn(
 ):  # , collisions=True): #, teleport=False):
     robot_saver = BodySaver(robot, **kwargs)
 
-    def fn(group, q1, q2, attachments=[]):
+    def fn(q1, q2, attachments=[]):
         robot_saver.restore()
         print("Plan motion fn {}->{}".format(q1, q2))
 
         obstacles = list(environment)
         attached = {attachment.child for attachment in attachments}
         obstacles = set(obstacles) - attached
-        q1.assign()
+        q1.assign(**kwargs)
 
         resolutions = math.radians(10) * np.ones(len(q2.joints))
 
@@ -574,11 +575,11 @@ def get_plan_motion_fn(
 
         sequence = Sequence(
             commands=[
-                GroupTrajectory(robot, group, path, **kwargs),
+                GroupTrajectory(robot, ARM_GROUP, path, **kwargs),
             ],
-            name="move-{}".format(group),
+            name="move-{}".format(ARM_GROUP),
         )
-        return Tuple(sequence)
+        return (sequence,)
 
     return fn
 

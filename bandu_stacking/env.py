@@ -269,7 +269,7 @@ class StackingEnvironment:
         for block_index, block_id in enumerate(self.block_ids):
             found_collision_free = False
             timeout = 10
-            padding = 0.1
+            padding = 0.3
             while not found_collision_free or timeout > 0:
                 timeout -= 1
 

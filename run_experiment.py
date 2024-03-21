@@ -8,9 +8,9 @@ from bandu_stacking.pb_utils import wait_if_gui
 from bandu_stacking.policies.random_policy import RandomPolicy
 
 # from bandu_stacking.policies.skeleton_planner import SkeletonPlanner
-from bandu_stacking.policies.skeleton_planner_improved import SkeletonPlannerImproved
+from bandu_stacking.policies.skeleton_planner import SkeletonPlanner
 
-algorithms = {"random": RandomPolicy, "skeleton_planner": SkeletonPlannerImproved}
+algorithms = {"random": RandomPolicy, "skeleton_planner": SkeletonPlanner}
 
 object_sets = ["blocks", "bandu", "random"]
 
@@ -62,11 +62,12 @@ def main():
         cameraPitch=-15,
         cameraTargetPosition=[-0.5, 0, 0],
     )
-    wait_if_gui(client=env.client)
 
     rewards = []
     for _ in range(args.num_exps):
         s = env.reset()
+        wait_if_gui(client=env.client)
+
         for _ in range(100):
             env.client.stepSimulation()
         for _ in range(args.max_steps):

@@ -160,6 +160,7 @@ def plan_workspace_motion(
                     None,
                 )
                 if arm_conf is None:
+                    print("[plan_workspace_motion] arm_conf is None")
                     break
 
                 arm_conf = extract_arm_conf(arm_conf)
@@ -198,6 +199,7 @@ def plan_workspace_motion(
                 )
 
                 return arm_path
+    print("[plan_workspace_motion] max_attempts reached")
     return None
 
 
