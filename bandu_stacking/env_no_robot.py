@@ -78,23 +78,6 @@ def iterate_sequence(
     return state
 
 
-def add_table(
-    table_width: float = 1.50,
-    table_length: float = 1.22,
-    table_thickness: float = 0.03,
-    color: Tuple[float, float, float, float] = (0.75, 0.75, 0.75, 1.0),
-    client=None,
-) -> Tuple[int, List[int]]:
-    # Panda table downstairs very roughly (few cm of error)
-    table = create_box(
-        table_width, table_length, table_thickness, color=color, client=client
-    )
-    set_pose(table, TABLE_POSE, client=client)
-    workspace = []
-
-    return table, workspace
-
-
 def setup_client_pybullet():
     client = bc.BulletClient(connection_mode=p.GUI)
 

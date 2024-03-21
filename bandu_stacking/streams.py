@@ -346,7 +346,7 @@ def get_cfree_traj_pose_test(robot, **kwargs):
 
 
 def get_plan_pick_fn(robot, environment=[], **kwargs):
-    robot_saver = BodySaver(robot, client=robot.client)
+    robot_saver = BodySaver(robot, **kwargs)
     environment = environment
 
     def fn(arm, obj, pose, grasp, base_conf):
@@ -417,7 +417,7 @@ def get_plan_pick_fn(robot, environment=[], **kwargs):
 
 
 def get_plan_place_fn(robot, **kwargs):
-    robot_saver = BodySaver(robot, client=robot.client)
+    robot_saver = BodySaver(robot, **kwargs)
 
     def fn(arm, obj, pose, grasp, base_conf):
         # TODO: generator instead of a function
@@ -472,7 +472,7 @@ def get_plan_place_fn(robot, **kwargs):
 
 
 def get_plan_mobile_place_fn(robot, **kwargs):
-    robot_saver = BodySaver(robot, client=robot.client)
+    robot_saver = BodySaver(robot, **kwargs)
     place_fn = get_plan_place_fn(robot, **kwargs)
 
     def fn(arm, obj, pose, grasp):
@@ -494,7 +494,7 @@ def get_plan_mobile_place_fn(robot, **kwargs):
 def get_plan_mobile_look_fn(
     robot, environment=[], max_head_attempts=10, max_base_attempts=100, **kwargs
 ):
-    robot_saver = BodySaver(robot, client=robot.client)
+    robot_saver = BodySaver(robot, **kwargs)
 
     def fn(obj, pose):
         while True:
@@ -538,7 +538,7 @@ def get_plan_mobile_look_fn(
 
 
 def get_plan_look_fn(robot, environment=[], max_attempts=1000, **kwargs):
-    robot_saver = BodySaver(robot, client=robot.client)
+    robot_saver = BodySaver(robot, **kwargs)
 
     def fn(obj, pose, base_conf):
         while True:
@@ -570,7 +570,7 @@ def get_plan_look_fn(robot, environment=[], max_attempts=1000, **kwargs):
 
 
 def get_plan_drop_fn(robot, environment=[], z_offset=2e-2, shrink=0.25, **kwargs):
-    robot_saver = BodySaver(robot, client=robot.client)
+    robot_saver = BodySaver(robot, **kwargs)
 
     def fn(arm, obj, grasp, bin, bin_pose, base_conf):
         # TODO: don't necessarily need the grasp
@@ -656,8 +656,7 @@ def get_plan_drop_fn(robot, environment=[], z_offset=2e-2, shrink=0.25, **kwargs
 def get_plan_motion_fn(
     robot, environment=[], **kwargs
 ):  # , collisions=True): #, teleport=False):
-    robot_saver = BodySaver(robot, client=robot.client)
-    robot_aabb = scale_aabb(recenter_oobb(robot.get_shape_oobb()).aabb, 0.5)
+    robot_saver = BodySaver(robot, **kwargs)
 
     def fn(group, q1, q2, attachments=[]):
         robot_saver.restore()

@@ -19,13 +19,11 @@ from bandu_stacking.pb_utils import (
     STATIC_MASS,
     WHITE,
     Attachment,
-    BodySaver,
     ConfSaver,
     Point,
     Pose,
     WorldSaver,
     add_fixed_constraint,
-    add_segments,
     apply_alpha,
     clone_body,
     create_box,
@@ -56,8 +54,6 @@ from bandu_stacking.pb_utils import (
     get_moving_links,
     get_pose,
     get_relative_pose,
-    get_target_path,
-    has_gui,
     invert,
     is_fixed_base,
     joint_from_name,
@@ -68,7 +64,6 @@ from bandu_stacking.pb_utils import (
     multiply,
     remove_body,
     remove_constraint,
-    remove_debug,
     safe_zip,
     set_all_color,
     set_dynamics,
@@ -86,7 +81,7 @@ TRANSPARENT = RGBA(0, 0, 0, 0)
 
 ROOT_PATH = os.path.abspath(os.path.join(__file__, *[os.pardir] * 1))
 SRL_PATH = os.path.join(ROOT_PATH, "models/srl")
-PANDA_PATH = os.path.abspath("models/srl/franka_panda/panda.urdf")
+PANDA_PATH = os.path.join(ROOT_PATH, "models/srl/franka_panda/panda.urdf")
 
 WIDTH, HEIGHT = 640, 480
 FX, FY = 525.0 / 2, 525.0 / 2
@@ -250,6 +245,7 @@ def add_table(
     table_width: float = 1.50,
     table_length: float = 1.22,
     table_thickness: float = 0.03,
+    table_pose: Pose = TABLE_POSE,
     color: Tuple[float, float, float, float] = (0.75, 0.75, 0.75, 1.0),
     client=None,
 ) -> Tuple[int, List[int]]:
@@ -257,7 +253,7 @@ def add_table(
     table = create_box(
         table_width, table_length, table_thickness, color=color, client=client
     )
-    set_pose(table, TABLE_POSE, client=client)
+    set_pose(table, table_pose, client=client)
     workspace = []
 
     return table, workspace
@@ -366,6 +362,29 @@ class GroupConf(Conf):
 
     def __repr__(self):
         return "{}q{}".format(self.group[0], id(self) % 1000)
+
+
+class Command(object):
+
+    def switch_client(self):
+        raise NotImplementedError
+
+    @property
+    def context_bodies(self):
+        return set()
+
+    def iterate(self, state, **kwargs):
+        raise NotImplementedError()
+
+    def controller(self, *args, **kwargs):
+        raise NotImplementedError()
+
+    def execute(self, controller, *args, **kwargs):
+        # raise NotImplementedError()
+        return True
+
+    def to_lisdf(self):
+        raise NotImplementedError
 
 
 class Switch(Command):
@@ -501,41 +520,6 @@ class Trajectory(Command):
     def __init__(self, path):
         self.path = tuple(path)
         # TODO: constructor that takes in this info
-
-    def apply(self, state, sample=1):
-        handles = add_segments(self.to_points()) if self._draw and has_gui() else []
-        for conf in self.path[::sample]:
-            conf.assign()
-            yield
-        end_conf = self.path[-1]
-        if isinstance(end_conf, Pose):
-            state.poses[end_conf.body] = end_conf
-        for handle in handles:
-            remove_debug(handle)
-
-    def control(self, dt=0, **kwargs):
-        # TODO: just waypoints
-        for conf in self.path:
-            if isinstance(conf, Pose):
-                conf = conf.to_base_conf()
-            for _ in joint_controller_hold(conf.body, conf.joints, conf.values):
-                step_simulation()
-                time.sleep(dt)
-
-    def to_points(self, link=BASE_LINK):
-        # TODO: this is computationally expensive
-        points = []
-        for conf in self.path:
-            with BodySaver(conf.body):
-                conf.assign()
-                # point = np.array(point_from_pose(get_link_pose(conf.body, link)))
-                point = np.array(get_group_conf(conf.body, "base"))
-                point[2] = 0
-                point += 1e-2 * np.array([0, 0, 1])
-                if not (points and np.allclose(points[-1], point, atol=1e-3, rtol=0)):
-                    points.append(point)
-        points = get_target_path(self)
-        return waypoints_from_path(points)
 
     def distance(self, distance_fn=get_distance):
         total = 0.0
@@ -855,7 +839,8 @@ class WorldState:
     def __init__(self, savers=[], attachments={}, client=None):
         # a part of the state separate from PyBullet
         # TODO: other fluent things
-        super(WorldState, self).__init__(attachments)
+
+        self.attachments = attachments
         self.world_saver = WorldSaver(client=client)
         self.savers = tuple(savers)
         self.client = client
@@ -873,31 +858,6 @@ class WorldState:
         return "{}({}, {})".format(
             self.__class__.__name__, list(self.savers), sorted(self.attachments)
         )
-
-
-class Command(object):
-    # def __init__(self, state=[]):
-    #    self.state = tuple(state)
-
-    def switch_client(self):
-        raise NotImplementedError
-
-    @property
-    def context_bodies(self):
-        return set()
-
-    def iterate(self, state, **kwargs):
-        raise NotImplementedError()
-
-    def controller(self, *args, **kwargs):
-        raise NotImplementedError()
-
-    def execute(self, controller, *args, **kwargs):
-        # raise NotImplementedError()
-        return True
-
-    def to_lisdf(self):
-        raise NotImplementedError
 
 
 class Sequence(Command):  # Commands, CommandSequence

@@ -9,11 +9,7 @@ from tqdm import tqdm
 
 from bandu_stacking.bandu_utils import check_collision, mesh_from_obj
 from bandu_stacking.env import TABLE_AABB, get_absolute_pose
-from bandu_stacking.env_utils import (
-    GroupConf,
-    RelativePose,
-    Sequence,
-)
+from bandu_stacking.env_utils import PANDA_GROUPS, GroupConf, RelativePose, Sequence
 from bandu_stacking.pb_utils import (
     Euler,
     Point,
@@ -40,7 +36,7 @@ def aabb_height(aabb):
 def get_initial_configurations(robot, client):
     return {
         group: GroupConf(robot, group, important=True, client=client)
-        for group in robot.groups
+        for group in PANDA_GROUPS
     }
 
 
@@ -237,8 +233,8 @@ class SkeletonPlanner(Policy):
         mesh_info = {}
         for block_id in initial_state.block_ids:
             block_dict = {}
-            vertices, faces = mesh_from_obj(block_id, client=self.env.client)
-            mesh = trimesh.Trimesh(vertices, faces)
+            mesh = mesh_from_obj(block_id, client=self.env.client)
+            tmesh = trimesh.Trimesh(mesh.vertices, mesh.faces)
             mesh.fix_normals()
             face_sizes = sorted(
                 [(i, area) for (i, area) in enumerate(mesh.area_faces)],
@@ -246,9 +242,9 @@ class SkeletonPlanner(Policy):
                 reverse=True,
             )
             block_dict["face_sizes"] = face_sizes
-            block_dict["mesh"] = mesh
-            block_dict["vertices"] = vertices
-            block_dict["faces"] = faces
+            block_dict["mesh"] = tmesh
+            block_dict["vertices"] = mesh.vertices
+            block_dict["faces"] = mesh.faces
             mesh_info[block_id] = block_dict
 
         # Find k plan skeletons with correct collision free bounding boxes

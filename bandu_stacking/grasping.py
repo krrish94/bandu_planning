@@ -20,9 +20,7 @@ from bandu_stacking.pb_utils import (
     PoseSaver,
     add_line,
     angle_between,
-    apply_affine,
     convex_combination,
-    draw_pose,
     euler_from_quat,
     get_aabb,
     get_aabb_center,
@@ -32,7 +30,6 @@ from bandu_stacking.pb_utils import (
     get_data_scale,
     get_distance,
     get_length,
-    get_model_info,
     get_pose,
     get_time_step,
     get_unit_vector,
@@ -50,8 +47,8 @@ from bandu_stacking.pb_utils import (
     set_pose,
     single_collision,
     tform_point,
+    tform_points,
     unit_pose,
-    wait_if_gui,
 )
 
 X_AXIS = np.array([1, 0, 0])  # TODO: make immutable
@@ -196,7 +193,6 @@ def filter_grasps(
     draw=False,
     **kwargs,
 ):
-    # TODO: move to experiment.py
     obj_pose = get_pose(obj)
     for grasp_tool in grasp_generator:
         if grasp_tool is None:
@@ -204,36 +200,14 @@ def filter_grasps(
         grasp_pose = multiply(
             obj_pose, invert(get_grasp(grasp_tool, gripper_from_tool))
         )
-        # pregrasp_pose = multiply(obj_pose, invert(get_pregrasp(grasp_tool, gripper_from_tool, **kwargs)))
         with PoseSaver(gripper):
             set_pose(gripper, grasp_pose)  # grasp_pose | pregrasp_pose
             if any(pairwise_collision(gripper, obst) for obst in [obj] + obstacles):
                 continue
-            if draw:
-                # print([pairwise_collision(gripper, obst) for obst in [obj] + obstacles])
-                handles = draw_pose(grasp_pose)
-                wait_if_gui()
-                remove_handles(handles)
-                # continue
-            # TODO: check the ground plane (bounding box of the gripper)
-            # TODO: check the pregrasp pose
-            # conf = close_until_collision(gripper, gripper_joints, bodies=[obj],
-            #                              open_conf=open_conf, closed_conf=closed_conf)
             yield grasp_tool
 
 
 ##################################################
-
-
-def get_mesh_path(obj):
-    info = get_model_info(obj)
-    if info is None:
-        [data] = get_visual_data(obj)
-        path = get_data_filename(data)
-    else:
-        path = info.path
-
-    return path
 
 
 def mesh_from_obj(obj, use_concave=True, client=None, **kwargs):
@@ -258,7 +232,7 @@ def mesh_from_obj(obj, use_concave=True, client=None, **kwargs):
         mesh = read_obj(filename, decompose=False)
 
     vertices = [scale * np.array(vertex) for vertex in mesh.vertices]
-    vertices = apply_affine(get_data_pose(data), vertices)
+    vertices = tform_points(get_data_pose(data), vertices)
     return Mesh(vertices, mesh.faces)
 
 
@@ -416,10 +390,7 @@ def score_overlap(
     percent = np.count_nonzero(~np.isnan(combined)) / (len(combined))
     np.nanmean(combined)
 
-    # return np.array([percent, -average])
     score = percent
-    # score = 1e3*percent + (-average) # TODO: true lexiographic sorting
-    # score = (percent, -average)
 
     if verbose:
         print(
@@ -431,9 +402,7 @@ def score_overlap(
                 np.nanmean(differences2),
             )
         )  # 0.032 sec
-    if draw:
-        wait_if_gui()
-        remove_handles(handles, **kwargs)
+
     return score
 
 
@@ -514,12 +483,9 @@ def generate_mesh_grasps(
             score_overlap(intersector, point1, point2, **kwargs),
             score_torque(mesh, tool_from_grasp, **kwargs),
         )
-        yield ScoredGrasp(
-            tool_from_grasp, point1, point2, score
-        )  # Could just return orientation and contact points
+        yield ScoredGrasp(tool_from_grasp, point1, point2, score)
 
         last_attempts = 0
-        # wait_if_gui()
         remove_handles(handles, **kwargs)
 
 

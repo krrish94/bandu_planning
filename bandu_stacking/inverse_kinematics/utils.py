@@ -3,7 +3,7 @@ from collections import namedtuple
 
 import numpy as np
 
-from ..utils import (
+from bandu_stacking.pb_utils import (
     get_distance,
     get_joint_limits,
     get_joint_position,

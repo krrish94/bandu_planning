@@ -60,7 +60,6 @@ def main():
         cameraDistance=1.5,
         cameraYaw=90,
         cameraPitch=-15,
-        # cameraTargetPosition=[-0.5, 0, 0.3],
         cameraTargetPosition=[-0.5, 0, 0],
     )
     wait_if_gui(client=env.client)

@@ -12,7 +12,6 @@ import pybullet_utils.bullet_client as bc
 from bandu_stacking.bandu_utils import (
     create_pybullet_block,
     get_absolute_pose,
-    pairwise_collision,
 )
 from bandu_stacking.env_utils import (
     PANDA_PATH,
@@ -26,6 +25,7 @@ from bandu_stacking.pb_utils import (
     create_box,
     get_aabb_extent,
     load_pybullet,
+    pairwise_collision,
     set_pose,
     wait_for_duration,
     wait_if_gui,

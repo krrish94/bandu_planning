@@ -11,10 +11,12 @@ from typing import Any, List, Optional, Tuple
 
 import numpy as np
 import pybullet as p
-from motion_planning.motion_planners.meta import solve
+from scipy.spatial import ConvexHull
 from scipy.spatial.transform import Rotation as R
 
-DEFAULT_CLIENT = None
+from bandu_stacking.motion_planning.motion_planners.meta import solve
+
+DEFAULT_CLIENT = p
 CLIENT = 0
 BASE_LINK = -1
 STATIC_MASS = 0
@@ -80,6 +82,11 @@ class Interval:
 UNIT_LIMITS = Interval(0.0, 1.0)
 CIRCULAR_LIMITS = Interval(-np.pi, np.pi)
 UNBOUNDED_LIMITS = Interval(-np.inf, np.inf)
+
+
+def angle_between(vec1, vec2):
+    inner_product = np.dot(vec1, vec2) / (get_length(vec1) * get_length(vec2))
+    return math.acos(clip(inner_product, min_value=-1.0, max_value=+1.0))
 
 
 def quat_from_euler(euler):
@@ -524,6 +531,15 @@ def join_paths(*paths):
 
 def list_paths(directory):
     return sorted(join_paths(directory, filename) for filename in os.listdir(directory))
+
+
+def get_min_limit(body, joint, **kwargs):
+    # TODO: rename to min_position
+    return get_joint_limits(body, joint, **kwargs)[0]
+
+
+def get_min_limits(body, joints, **kwargs):
+    return [get_min_limit(body, joint, **kwargs) for joint in joints]
 
 
 def get_max_limit(body, joint, **kwargs):
@@ -997,6 +1013,28 @@ def safe_zip(sequence1, sequence2):  # TODO: *args
     sequence1, sequence2 = list(sequence1), list(sequence2)
     assert len(sequence1) == len(sequence2)
     return list(zip(sequence1, sequence2))
+
+
+def violates_limit(body, joint, value, **kwargs):
+    # TODO: custom limits
+    if is_circular(body, joint, **kwargs):
+        return False
+    lower, upper = get_joint_limits(body, joint, **kwargs)
+    return (value < lower) or (upper < value)
+
+
+def violates_limits(body, joints, values, **kwargs):
+    return any(
+        violates_limit(body, joint, value, **kwargs)
+        for joint, value in zip(joints, values)
+    )
+
+
+def violates_limits(body, joints, values, **kwargs):
+    return any(
+        violates_limit(body, joint, value, **kwargs)
+        for joint, value in zip(joints, values)
+    )
 
 
 def set_joint_positions(body, joints, values, **kwargs):
@@ -1654,11 +1692,11 @@ def set_all_color(body, color, **kwargs):
         set_color(body, color, link, **kwargs)
 
 
-def get_aabb_vertices(aabb):
-    d = len(aabb[0])
+def get_aabb_vertices(aabb: AABB):
+    d = len(aabb.lower)
     return [
-        tuple(aabb[i[k]][k] for k in range(d))
-        for i in itertools.product(range(len(aabb)), repeat=d)
+        tuple([aabb.lower, aabb.upper][i[k]][k] for k in range(d))
+        for i in itertools.product(range(2), repeat=d)
     ]
 
 
@@ -1760,9 +1798,6 @@ def get_data_filename(data):
 
 
 def convex_hull(points):
-    from scipy.spatial import ConvexHull
-
-    # TODO: cKDTree is faster, but KDTree can do all pairs closest
     hull = ConvexHull(list(points), incremental=False)
     new_indices = {i: ni for ni, i in enumerate(hull.vertices)}
     vertices = hull.points[hull.vertices, :]
@@ -1802,7 +1837,8 @@ def write(filename, string):
 
 
 def mesh_from_points(points, under=True):
-    vertices, faces = map(np.array, convex_hull(points))
+    hull = convex_hull(points)
+    vertices, faces = np.array(hull.vertices), np.array(hull.faces)
     centroid = np.average(vertices, axis=0)
     new_faces = [orient_face(vertices, face, point=centroid) for face in faces]
     if under:
@@ -2919,3 +2955,120 @@ def plan_joint_motion(
         weights=weights,
         **kwargs,
     )
+
+
+def euler_from_quat(quat):
+    return p.getEulerFromQuaternion(quat)  # rotation around fixed axis
+
+
+def single_collision(body, **kwargs):
+    return pairwise_collisions(body, get_bodies(), **kwargs)
+
+
+def remove_handles(handles, **kwargs):
+    # with LockRenderer(**kwargs):
+    for handle in handles:
+        remove_debug(handle, **kwargs)
+    handles[:] = []
+
+
+def multiply_quats(*quats):
+    return quat_from_pose(multiply(*[(unit_point(), quat) for quat in quats]))
+
+
+def get_time_step():
+    return p.getPhysicsEngineParameters()["fixedTimeStep"]
+
+
+def get_ordered_ancestors(robot, link, **kwargs):
+    # return prune_fixed_joints(robot, get_link_ancestors(robot, link)[1:] + [link])
+    return get_link_ancestors(robot, link, **kwargs)[1:] + [link]
+
+
+def get_configuration(body, **kwargs):
+    return get_joint_positions(body, get_movable_joints(body, **kwargs), **kwargs)
+
+
+def set_configuration(body, values, **kwargs):
+    set_joint_positions(body, get_movable_joints(body, **kwargs), values, **kwargs)
+
+
+def create_sub_robot(robot, first_joint, target_link):
+    # TODO: create a class or generator for repeated use
+    selected_links = get_link_subtree(
+        robot, first_joint
+    )  # TODO: child_link_from_joint?
+    selected_joints = prune_fixed_joints(robot, selected_links)
+    assert target_link in selected_links
+    sub_target_link = selected_links.index(target_link)
+    sub_robot = clone_body(
+        robot, links=selected_links, visual=False, collision=False
+    )  # TODO: joint limits
+    assert len(selected_joints) == len(get_movable_joints(sub_robot))
+    return sub_robot, selected_joints, sub_target_link
+
+
+def multiple_sub_inverse_kinematics(
+    robot,
+    first_joint,
+    target_link,
+    target_pose,
+    max_attempts=1,
+    max_solutions=np.inf,
+    max_time=np.inf,
+    custom_limits={},
+    first_close=True,
+    **kwargs,
+):
+    # TODO: gradient descent using collision_info
+    start_time = time.time()
+    ancestor_joints = prune_fixed_joints(
+        robot, get_ordered_ancestors(robot, target_link)
+    )
+    affected_joints = ancestor_joints[ancestor_joints.index(first_joint) :]
+    sub_robot, selected_joints, sub_target_link = create_sub_robot(
+        robot, first_joint, target_link
+    )
+    # sub_joints = get_movable_joints(sub_robot)
+    # sub_from_real = dict(safe_zip(sub_joints, selected_joints))
+    sub_joints = prune_fixed_joints(
+        sub_robot, get_ordered_ancestors(sub_robot, sub_target_link)
+    )
+    selected_joints = affected_joints
+    # sub_from_real = dict(safe_zip(sub_joints, selected_joints))
+
+    # sample_fn = get_sample_fn(sub_robot, sub_joints, custom_limits=custom_limits) # [-PI, PI]
+    sample_fn = get_sample_fn(robot, selected_joints, custom_limits=custom_limits)
+    # lower_limits, upper_limits = get_custom_limits(robot, get_movable_joints(robot), custom_limits)
+    solutions = []
+    for attempt in range(max_attempts):
+        if (len(solutions) >= max_solutions) or (elapsed_time(start_time) >= max_time):
+            break
+        if not first_close or (attempt >= 1):  # TODO: multiple seed confs
+            sub_conf = sample_fn()
+            set_joint_positions(sub_robot, sub_joints, sub_conf, **kwargs)
+        sub_kinematic_conf = inverse_kinematics(
+            sub_robot,
+            sub_target_link,
+            target_pose,
+            max_time=max_time - elapsed_time(start_time),
+            **kwargs,
+        )
+        if sub_kinematic_conf is not None:
+            # set_configuration(sub_robot, sub_kinematic_conf)
+            sub_kinematic_conf = get_joint_positions(sub_robot, sub_joints, **kwargs)
+            set_joint_positions(robot, selected_joints, sub_kinematic_conf, **kwargs)
+            kinematic_conf = get_configuration(
+                robot, **kwargs
+            )  # TODO: test on the resulting robot state (e.g. collisions)
+            # if not all_between(lower_limits, kinematic_conf, upper_limits):
+            solutions.append(kinematic_conf)  # kinematic_conf | sub_kinematic_conf
+    if solutions:
+        set_configuration(robot, solutions[-1])
+    # TODO: test for redundant configurations
+    remove_body(sub_robot)
+    return solutions
+
+
+def matrix_from_quat(quat):
+    return np.array(p.getMatrixFromQuaternion(quat)).reshape(3, 3)

@@ -9,11 +9,7 @@ from tqdm import tqdm
 
 from bandu_stacking.bandu_utils import check_collision, mesh_from_obj
 from bandu_stacking.env import TABLE_AABB, get_absolute_pose
-from bandu_stacking.env_utils import (
-    GroupConf,
-    RelativePose,
-    Sequence,
-)
+from bandu_stacking.env_utils import PANDA_GROUPS, GroupConf, RelativePose, Sequence
 from bandu_stacking.pb_utils import (
     Euler,
     Point,
@@ -40,7 +36,7 @@ def aabb_height(aabb):
 def get_initial_configurations(robot, client):
     return {
         group: GroupConf(robot, group, important=True, client=client)
-        for group in robot.groups
+        for group in PANDA_GROUPS
     }
 
 
@@ -323,11 +319,11 @@ class SkeletonPlannerImproved(Policy):
         mesh_info = {}
         for block_id in initial_state.block_ids:
             block_dict = {}
-            vertices, faces = mesh_from_obj(block_id, client=self.env.client)
-            mesh = trimesh.Trimesh(vertices, faces)
-            mesh.fix_normals()
+            mesh = mesh_from_obj(block_id, client=self.env.client)
+            tmesh = trimesh.Trimesh(mesh.vertices, mesh.faces)
+            tmesh.fix_normals()
             face_sizes = sorted(
-                [(i, area) for (i, area) in enumerate(mesh.area_faces)],
+                [(i, area) for (i, area) in enumerate(tmesh.area_faces)],
                 key=lambda x: x[1],
                 reverse=True,
             )
@@ -342,12 +338,12 @@ class SkeletonPlannerImproved(Policy):
             # - areas of bottom faces
             # - etc.
             block_dict["face_sizes"] = face_sizes
-            block_dict["mesh"] = mesh
-            block_dict["vertices"] = vertices
-            block_dict["faces"] = faces
+            block_dict["mesh"] = tmesh
+            block_dict["vertices"] = tmesh.vertices
+            block_dict["faces"] = tmesh.faces
             block_dict["aabb"] = get_aabb(block_id, client=self.env.client)
-            block_dict["center_of_mass"] = mesh.center_mass
-            block_dict["volume"] = mesh.volume
+            block_dict["center_of_mass"] = tmesh.center_mass
+            block_dict["volume"] = tmesh.volume
             # Find geometric center of the block (i.e., center of the AABB)
             block_dict["geometric_center"] = np.mean(
                 np.array(block_dict["aabb"].lower) + np.array(block_dict["aabb"].upper)
@@ -364,8 +360,8 @@ class SkeletonPlannerImproved(Policy):
             # Remember to add face ids so that we know which face corresponds to which area
             block_dict["bottom_face_areas"] = [
                 (i, area)
-                for (i, area) in enumerate(mesh.area_faces)
-                if mesh.face_normals[i][2] < 0
+                for (i, area) in enumerate(tmesh.area_faces)
+                if tmesh.face_normals[i][2] < 0
             ]
             # Sort the above list in descending order of areas
             block_dict["bottom_face_areas"] = sorted(

@@ -12,13 +12,13 @@ sys.path.append(PARENT_DIR)
 
 from itertools import chain, islice
 
-from ..utils import (
-    INF,
+from bandu_stacking.pb_utils import (
     ConfSaver,
     elapsed_time,
     get_difference_fn,
     get_joint_positions,
     get_length,
+    get_link_parent,
     get_link_pose,
     get_max_limits,
     get_min_limits,
@@ -32,15 +32,13 @@ from ..utils import (
     multiple_sub_inverse_kinematics,
     multiply,
     parent_joint_from_link,
-    parent_link_from_joint,
     prune_fixed_joints,
     randomize,
     set_configuration,
     set_joint_positions,
-    sub_inverse_kinematics,
     violates_limits,
-    wait_for_user,
 )
+
 from .utils import compute_forward_kinematics, compute_inverse_kinematics
 
 SETUP_FILENAME = "setup.py"
@@ -112,8 +110,7 @@ def get_ik_joints(robot, ikfast_info, tool_link, **kwargs):
     [first_joint] = [
         parent_joint_from_link(link)
         for link in tool_ancestors
-        if parent_link_from_joint(robot, parent_joint_from_link(link), **kwargs)
-        == base_link
+        if get_link_parent(robot, parent_joint_from_link(link), **kwargs) == base_link
     ]
     assert prune_fixed_joints(robot, ee_ancestors, **kwargs) == prune_fixed_joints(
         robot, tool_ancestors, **kwargs
@@ -191,15 +188,15 @@ def ikfast_inverse_kinematics(
     tool_link,
     world_from_target,
     fixed_joints=[],
-    max_attempts=INF,
-    max_time=INF,
-    norm=INF,
-    max_distance=INF,
+    max_attempts=np.inf,
+    max_time=np.inf,
+    norm=np.inf,
+    max_distance=np.inf,
     **kwargs,
 ):
-    assert (max_attempts < INF) or (max_time < INF)
+    assert (max_attempts < np.inf) or (max_time < np.inf)
     if max_distance is None:
-        max_distance = INF
+        max_distance = np.inf
     # assert is_ik_compiled(ikfast_info)
     ikfast = import_ikfast(ikfast_info)
     ik_joints = get_ik_joints(robot, ikfast_info, tool_link, **kwargs)
@@ -212,7 +209,7 @@ def ikfast_inverse_kinematics(
     current_positions = get_joint_positions(robot, free_joints, **kwargs)
 
     # TODO: handle circular joints
-    # TODO: use norm=INF to limit the search for free values
+    # TODO: use norm=np.inf to limit the search for free values
     free_deltas = np.array(
         [0.0 if joint in fixed_joints else max_distance for joint in free_joints]
     )
@@ -226,7 +223,7 @@ def ikfast_inverse_kinematics(
         [current_positions],  # TODO: sample from a truncated Gaussian nearby
         interval_generator(lower_limits, upper_limits),
     )
-    if max_attempts < INF:
+    if max_attempts < np.inf:
         generator = islice(generator, max_attempts)
     start_time = time.time()
     for free_positions in generator:
@@ -251,8 +248,8 @@ def closest_inverse_kinematics(
     ikfast_info,
     tool_link,
     world_from_target,
-    max_candidates=INF,
-    norm=INF,
+    max_candidates=np.inf,
+    norm=np.inf,
     verbose=True,
     **kwargs,
 ):
@@ -262,7 +259,7 @@ def closest_inverse_kinematics(
     generator = ikfast_inverse_kinematics(
         robot, ikfast_info, tool_link, world_from_target, norm=norm, **kwargs
     )
-    if max_candidates < INF:
+    if max_candidates < np.inf:
         generator = islice(generator, max_candidates)
     solutions = list(generator)
     # TODO: relative to joint limits
@@ -272,7 +269,7 @@ def closest_inverse_kinematics(
     )
     if verbose:
         min_distance = min(
-            [INF]
+            [np.inf]
             + [get_length(difference_fn(q, current_conf), norm=norm) for q in solutions]
         )
         print(
