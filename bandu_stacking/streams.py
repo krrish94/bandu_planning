@@ -1,55 +1,44 @@
 import math
 import random
 import time
-from itertools import cycle
 
 import numpy as np
-from pybullet_tools.pr2_utils import (
-    get_top_and_bottom_grasps,
-)
 
-from bandu_stacking.grasping import generate_mesh_grasps
+from bandu_stacking.env_utils import (
+    Grasp,
+    GroupConf,
+    GroupTrajectory,
+    ParentBody,
+    Sequence,
+    Switch,
+)
+from bandu_stacking.grasping import Z_AXIS, Plane, generate_mesh_grasps
 from bandu_stacking.pb_utils import (
+    BodySaver,
     Euler,
     Point,
     Pose,
+    PoseSaver,
     Tuple,
-    aabb_from_extent_center,
     any_link_pair_collision,
     elapsed_time,
     get_aabb,
     get_aabb_center,
-    get_aabb_extent,
-    get_center_extent,
-    get_length,
-    get_link_pose,
     get_moving_links,
-    get_point,
     get_pose,
+    get_top_and_bottom_grasps,
     invert,
     multiply,
     pairwise_collision,
+    pairwise_collisions,
     point_from_pose,
-    pose_from_tform,
     quat_from_pose,
+    randomize,
+    scale_aabb,
     set_joint_positions,
     set_pose,
     stable_z_on_aabb,
-    tform_point,
-    BodySaver,
-    pairwise_collisions
 )
-from bandu_stacking.policies.planning.entities import WORLD_BODY, ParentBody
-from bandu_stacking.policies.planning.grasping import generate_mesh_grasps
-from bandu_stacking.policies.planning.primitives import (
-    Grasp,
-    GroupConf,
-    GroupTrajectory,
-    RelativePose,
-    Sequence,
-    Switch,
-)
-from bandu_stacking.policies.planning.utils import Z_AXIS, Plane
 from bandu_stacking.samplers import (
     COLLISION_DISTANCE,
     DISABLE_ALL_COLLISIONS,
@@ -64,18 +53,7 @@ from bandu_stacking.samplers import (
     workspace_collision,
 )
 
-# from pybullet_tools.utils import sub_inverse_kinematics, plan_waypoints_joint_motion, plan_cartesian_motion
-# from examples.drake.generators import plan_waypoints_joint_motion
-# from control_tools.ik.pr2_ik import get_arm_ik_generator
-# from plan_tools.samplers.generators import solve_inverse_kinematics
-
-
-TOOL_POSE = Pose(
-    point=Point(x=0.00), euler=Euler(pitch=np.pi / 2)
-)  # +x out of gripper arm
-
-# print("TOOL POSE: "+str(TOOL_POSE))
-# print(p.getEulerFromQuaternion(invert(TOOL_POSE)[1]))
+TOOL_POSE = Pose(point=Point(x=0.00), euler=Euler(pitch=np.pi / 2))
 
 SWITCH_BEFORE = "grasp"  # contact | grasp | pregrasp | arm | none # TODO: tractor
 BASE_COST = 1
@@ -93,24 +71,6 @@ def z_plane(z=0.0):
     normal = Z_AXIS
     origin = z * normal
     return Plane(normal, origin)
-
-
-def slice_mesh(mesh, plane=z_plane()):
-    # TODO: could instead use slice_mesh_plane and compute the surface area of the volume
-    from trimesh.intersections import mesh_plane
-
-    plane_normal, plane_origin = plane
-    lines = mesh_plane(
-        mesh, plane_normal, plane_origin, return_faces=False, cached_dots=None
-    )  # (n, 2, 3)
-    if lines.shape[0] == 0:
-        return []
-    points = np.vstack(lines)
-    # TODO: handle shapes with hollow interiors like cups
-    surface = create_surface(plane, points, origin_type="centroid")
-    if surface is None:
-        return []
-    return [surface]
 
 
 def close_until_collision(
@@ -381,168 +341,6 @@ def get_cfree_traj_pose_test(robot, **kwargs):
 
 #######################################################
 
-# def get_default_poses(obj, weight=1.):
-#     default_pose = Pose()
-#     yield default_pose, weight
-
-
-def compute_stable_poses(obj, weight=0.5, min_prob=0.0, min_area=None):
-    # TODO: filter similar orientations (if only a change in yaw)
-    # from trimesh.path.packing import paths, polygons, rectangles
-    default_pose = Pose()
-    yield default_pose, weight
-    if weight >= 1:
-        return
-    history = [default_pose]
-    obj_trimesh = trimesh_from_body(obj)
-    set_pose(obj, default_pose)
-
-    pose_mats, poses_prob = obj_trimesh.compute_stable_poses(
-        center_mass=None, sigma=0.0, n_samples=1, threshold=min_prob
-    )
-    # pose_mats = pose_mats[poses_prob>.1]
-    for pose_mat, pose_score in list(zip(pose_mats, poses_prob)):  # reversed
-        area = np.nan
-        if min_area is not None:
-            new_trimesh = obj_trimesh.copy().apply_transform(
-                pose_mat
-            )  # apply_transform modifies the input mesh
-            # print(new_trimesh.bounds)
-            surfaces = slice_mesh(new_trimesh, plane=z_plane(z=1e-2))
-            if not surfaces:
-                continue
-            surface = surfaces[0]
-            area = 0.0 if surface is None else convex_area(surface.vertices)
-            if area <= min_area:
-                continue
-
-        print(
-            "Num: {} | Prob: {:.3f} | Area: {:.3f}".format(
-                len(history), pose_score, area
-            )
-        )
-        top_pose = pose_from_tform(pose_mat)
-        set_pose(obj, top_pose)
-        offset_center1, offset_extent1 = get_center_extent(obj)
-        offset_center2 = get_point(obj)
-        dz = (offset_center1[2] - offset_extent1[2] / 2) - offset_center2[2]
-        top_pose = (top_pose[0] + (0, 0, dz), top_pose[1])
-        set_pose(obj, top_pose)
-
-        # print(len(history), euler_from_quat(top_pose[1]), pose_score, scores)
-        yield top_pose, (1 - weight) * pose_score
-        history.append(top_pose)
-        # TODO: compare orientation similarity in order to prune similar
-
-
-def generate_stable_poses(obj, deterministic=False, **kwargs):
-    # TODO: place on the most stable face
-    # TODO: placement that maximizes height
-    # TODO: place cost dependent on the quality of the placement
-    start_time = time.time()
-    weight = 0.0 if REORIENT else 1.0
-    # weight = 0.5 if REORIENT else 1.
-    poses, scores = zip(*compute_stable_poses(obj, weight=weight, **kwargs))
-    print(
-        "Poses: {} | Scores: {} | Time: {:.3f}".format(
-            len(poses), np.round(scores, 3).tolist(), elapsed_time(start_time)
-        )
-    )
-    if deterministic:
-        generator = cycle(iter(poses))
-    else:
-        # TODO: unweighted version of this if above a threshold
-        generator = (
-            random.choices(poses, weights=scores, k=1)[0] for _ in inf_generator()
-        )  # TODO: python2
-    return generator
-
-
-#######################################################
-
-
-def get_placement_gen_fn(
-    robot,
-    other_obstacles,
-    environment=[],
-    buffer=2e-2,
-    max_distance=np.inf,
-    max_attempts=100,
-    **kwargs,
-):  # max_distance=PR2_WINGSPAN
-    base_pose = get_link_pose(robot, robot.base_link, **kwargs)
-
-    def gen_fn(obj, surface, surface_pose):
-        surface_pose.assign()
-        surface_oobb = (
-            surface.get_shape_oobb()
-        )  # TODO: change to as long as the COM is on
-        # draw_oobb(surface_oobb)
-        obstacles = set(environment) - {obj, surface}  # TODO: surface might have walls
-
-        aabb = surface_oobb.aabb
-        # aabb = buffer_aabb(aabb, buffer)
-        aabb = aabb_from_extent_center(
-            2 * buffer * np.array([1, 1, 0]) + get_aabb_extent(aabb),
-            get_aabb_center(aabb),
-        )
-        for top_pose in generate_stable_poses(obj):  # cycle
-            pose = sample_placement_on_aabb(
-                obj,
-                aabb,
-                max_attempts=max_attempts,
-                top_pose=top_pose,  # TODO: reference pose instead?
-                percent=1.0,
-                epsilon=1e-3,
-                **kwargs,
-            )  # TODO: Z_EPSILON
-            if pose is None:
-                # yield None
-                continue
-            pose = multiply(surface_oobb.pose, pose)
-            set_pose(obj, pose, **kwargs)
-            rel_pose = RelativePose(
-                obj,
-                parent=ParentBody(surface, **kwargs),
-                parent_state=surface_pose,
-                **kwargs,
-            )  # , relative_pose=pose)
-            base_distance = get_length(
-                point_from_pose(multiply(invert(base_pose), rel_pose.get_pose()))[:2]
-            )
-            if (surface in other_obstacles) and (base_distance > max_distance):
-                continue
-            if pairwise_collisions(
-                obj, obstacles - set(rel_pose.ancestors()), max_distance=0.0, **kwargs
-            ):
-                # TODO: max_attempts here as well
-                continue
-            yield Tuple(rel_pose)
-        # yield None
-
-    return gen_fn
-
-
-def get_pose_cost_fn(robot, cost_per_m=1.0, **kwargs):
-    base_pose = get_link_pose(robot, robot.base_link, **kwargs)
-
-    def cost_fn(obj, pose):
-        cost = BASE_COST
-        if PROXIMITY_COST_TERM:  # Closest is least costly
-            point_base = tform_point(
-                invert(base_pose), point_from_pose(pose.get_pose())
-            )
-            distance = get_length(point_base[:2])
-            cost += cost_per_m * distance
-        if GRASP_EXPERIMENT:
-            cost += random.random()  # Break ties for holding any object
-        return cost
-
-    return cost_fn
-
-
-#######################################################
-
 
 def get_plan_pick_fn(robot, environment=[], **kwargs):
     robot_saver = BodySaver(robot, client=robot.client)
@@ -647,7 +445,7 @@ def get_plan_place_fn(robot, **kwargs):
             contexts=[grasp],
             client=robot.client,
         )
-        switch = Switch(obj, parent=WORLD_BODY)
+        switch = Switch(obj, parent=None)
 
         # TODO: wait for a bit and remove colliding objects
         if SWITCH_BEFORE == "contact":
@@ -790,7 +588,8 @@ def get_plan_drop_fn(robot, environment=[], z_offset=2e-2, shrink=0.25, **kwargs
 
         # reference_pose = unit_pose()
         reference_pose = multiply(
-            Pose(euler=Euler(pitch=np.pi / 2, yaw=random.uniform(0, 2 * np.pi))), grasp.value
+            Pose(euler=Euler(pitch=np.pi / 2, yaw=random.uniform(0, 2 * np.pi))),
+            grasp.value,
         )
         # obj_pose = sample_placement_on_aabb(obj, bin_aabb, top_pose=reference_pose, percent=shrink, epsilon=1e-2)
         # _, extent = approximate_as_prism(obj, reference_pose=reference_pose)
@@ -826,7 +625,7 @@ def get_plan_drop_fn(robot, environment=[], z_offset=2e-2, shrink=0.25, **kwargs
         if arm_path is None:
             return None
         arm_conf = GroupConf(robot, arm, positions=arm_path[0], **kwargs)
-        switch = Switch(obj, parent=WORLD_BODY)
+        switch = Switch(obj, parent=None)
 
         closed_conf, open_conf = robot.get_group_limits(gripper_group)
         # gripper_joints = robot.get_group_joints(gripper_group)

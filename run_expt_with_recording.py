@@ -1,14 +1,8 @@
-import datetime
-import sys
-
-sys.path.extend(["pybullet_planning"])
-
 import argparse
+import datetime
 
 import numpy as np
 import pybullet as p
-import pybullet_data
-from pybullet_tools.utils import wait_if_gui
 
 from bandu_stacking.env import StackingEnvironment
 from bandu_stacking.policies.random_policy import RandomPolicy

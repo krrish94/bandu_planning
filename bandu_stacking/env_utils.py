@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import itertools
 import os
 import time
@@ -11,24 +13,33 @@ import trimesh
 
 from bandu_stacking.pb_utils import (
     AABB,
+    BASE_LINK,
     DEFAULT_CLIENT,
     RGBA,
+    STATIC_MASS,
     WHITE,
     Attachment,
+    BodySaver,
     ConfSaver,
+    Point,
     Pose,
     WorldSaver,
+    add_fixed_constraint,
+    add_segments,
     apply_alpha,
     clone_body,
     create_box,
     create_collision_shape,
     create_visual_shape,
+    empty_sequence,
     get_aabb_extent,
+    get_bodies,
     get_camera_matrix,
     get_closest_points,
     get_collision_data,
     get_custom_limits,
     get_distance,
+    get_fixed_constraints,
     get_image_at_pose,
     get_joint_names,
     get_joint_positions,
@@ -37,6 +48,7 @@ from bandu_stacking.pb_utils import (
     get_link_parent,
     get_link_pose,
     get_link_subtree,
+    get_mass,
     get_max_limits,
     get_mesh_geometry,
     get_movable_joint_descendants,
@@ -44,7 +56,10 @@ from bandu_stacking.pb_utils import (
     get_moving_links,
     get_pose,
     get_relative_pose,
+    get_target_path,
+    has_gui,
     invert,
+    is_fixed_base,
     joint_from_name,
     joints_from_names,
     link_from_name,
@@ -52,6 +67,8 @@ from bandu_stacking.pb_utils import (
     load_pybullet,
     multiply,
     remove_body,
+    remove_constraint,
+    remove_debug,
     safe_zip,
     set_all_color,
     set_dynamics,
@@ -83,7 +100,7 @@ PANDA_GROUPS = {
     "main_gripper": ["panda_finger_joint1", "panda_finger_joint2"],
 }
 YCB_PATH = os.path.join(SRL_PATH, "ycb")
-
+USE_CONSTRAINTS = True
 
 DEFAULT_ARM_POS = [
     -0.0806406098426434,
@@ -349,6 +366,221 @@ class GroupConf(Conf):
 
     def __repr__(self):
         return "{}q{}".format(self.group[0], id(self) % 1000)
+
+
+class Switch(Command):
+    def __init__(self, body, parent=None):
+        # TODO: add client
+        self.body = body
+        self.parent = parent
+
+    def switch_client(self, robot):
+        if self.parent is not None:
+            return Switch(
+                self.body,
+                parent=ParentBody(robot, self.parent.link, client=robot.client),
+            )
+        else:
+            return Switch(self.body, parent=None)
+
+    def iterate(self, state, **kwargs):
+        if self.parent is None and self.body in state.attachments.keys():
+            del state.attachments[self.body]
+        elif self.parent is not None:
+            robot, tool_link = self.parent
+            gripper_group = None
+            for group, (
+                arm_group,
+                gripper_group,
+                tool_name,
+            ) in robot.manipulators.items():
+                if link_from_name(robot, tool_name, client=robot.client) == tool_link:
+                    break
+            else:
+                raise RuntimeError(tool_link)
+            gripper_joints = robot.get_group_joints(gripper_group)
+            finger_links = robot.get_finger_links(gripper_joints)
+
+            movable_bodies = [
+                body for body in get_bodies(client=robot.client) if (body != robot)
+            ]
+
+            # collision_bodies = [body for body in movable_bodies if any_link_pair_collision(
+            #    robot, finger_links, body, max_distance=1e-2)]
+
+            gripper_width = robot.get_gripper_width(gripper_joints)
+            max_width = robot.get_max_gripper_width(
+                robot.get_group_joints(gripper_group)
+            )
+
+            max_distance = 5e-2
+            collision_bodies = [
+                body
+                for body in movable_bodies
+                if (
+                    all(
+                        get_closest_points(
+                            robot,
+                            body,
+                            link1=link,
+                            max_distance=max_distance,
+                            client=robot.client,
+                        )
+                        for link in finger_links
+                    )
+                    and get_mass(body, client=robot.client) != STATIC_MASS
+                )
+            ]
+
+            if len(collision_bodies) > 0:
+                relative_pose = RelativePose(
+                    collision_bodies[0], parent=self.parent, client=robot.client
+                )
+                state.attachments[self.body] = relative_pose
+
+        return empty_sequence()
+
+    def controller(self, use_constraints=USE_CONSTRAINTS, **kwargs):
+        if not use_constraints:
+            return  # empty_sequence()
+        if self.parent is None:
+            # TODO: record the robot and tool_link
+            for constraint in get_fixed_constraints():
+                remove_constraint(constraint)
+        else:
+            robot, tool_link = self.parent
+            gripper_group = None
+            for group, (
+                arm_group,
+                gripper_group,
+                tool_name,
+            ) in robot.manipulators.items():
+                if link_from_name(robot, tool_name) == tool_link:
+                    break
+            else:
+                raise RuntimeError(tool_link)
+            gripper_joints = robot.get_group_joints(gripper_group)
+            finger_links = robot.get_finger_links(gripper_joints)
+
+            movable_bodies = [
+                body
+                for body in get_bodies(client=self.robot.client)
+                if (body != robot) and not is_fixed_base(body, client=self.robot.client)
+            ]
+            # collision_bodies = [body for body in movable_bodies if any_link_pair_collision(
+            #    robot, finger_links, body, max_distance=1e-2)]
+
+            gripper_width = robot.get_gripper_width(gripper_joints)
+            max_distance = gripper_width / 2.0
+            collision_bodies = [
+                body
+                for body in movable_bodies
+                if all(
+                    get_closest_points(
+                        robot, body, link1=link, max_distance=max_distance
+                    )
+                    for link in finger_links
+                )
+            ]
+            for body in collision_bodies:
+                # TODO: improve the PR2's gripper force
+                add_fixed_constraint(body, robot, tool_link, max_force=None)
+        # TODO: yield for longer
+        yield
+
+    def __repr__(self):
+        return "{}({})".format(self.__class__.__name__, self.body)
+
+    def to_lisdf(self):
+        return []
+
+
+class Trajectory(Command):
+    _draw = False
+
+    def __init__(self, path):
+        self.path = tuple(path)
+        # TODO: constructor that takes in this info
+
+    def apply(self, state, sample=1):
+        handles = add_segments(self.to_points()) if self._draw and has_gui() else []
+        for conf in self.path[::sample]:
+            conf.assign()
+            yield
+        end_conf = self.path[-1]
+        if isinstance(end_conf, Pose):
+            state.poses[end_conf.body] = end_conf
+        for handle in handles:
+            remove_debug(handle)
+
+    def control(self, dt=0, **kwargs):
+        # TODO: just waypoints
+        for conf in self.path:
+            if isinstance(conf, Pose):
+                conf = conf.to_base_conf()
+            for _ in joint_controller_hold(conf.body, conf.joints, conf.values):
+                step_simulation()
+                time.sleep(dt)
+
+    def to_points(self, link=BASE_LINK):
+        # TODO: this is computationally expensive
+        points = []
+        for conf in self.path:
+            with BodySaver(conf.body):
+                conf.assign()
+                # point = np.array(point_from_pose(get_link_pose(conf.body, link)))
+                point = np.array(get_group_conf(conf.body, "base"))
+                point[2] = 0
+                point += 1e-2 * np.array([0, 0, 1])
+                if not (points and np.allclose(points[-1], point, atol=1e-3, rtol=0)):
+                    points.append(point)
+        points = get_target_path(self)
+        return waypoints_from_path(points)
+
+    def distance(self, distance_fn=get_distance):
+        total = 0.0
+        for q1, q2 in zip(self.path, self.path[1:]):
+            total += distance_fn(q1.values, q2.values)
+        return total
+
+    def iterate(self):
+        for conf in self.path:
+            yield conf
+
+    def reverse(self):
+        return Trajectory(reversed(self.path))
+
+    # def __repr__(self):
+    #    return 't{}'.format(id(self) % 1000)
+    def __repr__(self):
+        d = 0
+        if self.path:
+            conf = self.path[0]
+            d = 3 if isinstance(conf, Pose) else len(conf.joints)
+        return "t({},{})".format(d, len(self.path))
+
+
+class GroupTrajectory(Trajectory):
+    def __init__(self, body, group, path, *args, **kwargs):
+        # TODO: rename body to robot
+        joints = body.get_group_joints(group, **kwargs)
+        super(GroupTrajectory, self).__init__(body, joints, path, *args, **kwargs)
+        self.group = group
+
+    def reverse(self, **kwargs):
+        return self.__class__(
+            self.body,
+            self.group,
+            self.path[::-1],
+            velocity_scale=self.velocity_scale,
+            contact_links=self.contact_links,
+            time_after_contact=self.time_after_contact,
+            contexts=self.contexts,
+            **kwargs,
+        )
+
+    def __repr__(self):
+        return "{}t{}".format(self.group[0], id(self) % 1000)
 
 
 class Camera(object):  # TODO: extend Object?
@@ -718,3 +950,75 @@ class Sequence(Command):  # Commands, CommandSequence
 
     def to_lisdf(self):
         return sum([command.to_lisdf() for command in self.commands], [])
+
+
+PREGRASP_DISTANCE = 0.05
+
+
+def get_pregrasp(
+    grasp_tool,
+    gripper_from_tool=unit_pose(),
+    tool_distance=PREGRASP_DISTANCE,
+    object_distance=PREGRASP_DISTANCE,
+):
+    # TODO: rename to approach, standoff, guarded, ...
+    return multiply(
+        gripper_from_tool,
+        Pose(Point(x=tool_distance)),
+        grasp_tool,
+        Pose(Point(z=-object_distance)),
+    )
+
+
+class Grasp(object):  # RelativePose
+    def __init__(self, body, grasp, pregrasp=None, closed_position=0.0, **kwargs):
+        # TODO: condition on a gripper (or list valid pairs)
+        self.body = body
+        self.grasp = grasp
+        if pregrasp is None:
+            pregrasp = get_pregrasp(grasp)
+        self.pregrasp = pregrasp
+        self.closed_position = closed_position  # closed_positions
+
+    @property
+    def value(self):
+        return self.grasp
+
+    @property
+    def approach(self):
+        return self.pregrasp
+
+    def create_relative_pose(
+        self, robot, link=BASE_LINK, **kwargs
+    ):  # create_attachment
+        parent = ParentBody(body=robot, link=link, **kwargs)
+        return RelativePose(
+            self.body, parent=parent, relative_pose=self.grasp, **kwargs
+        )
+
+    def create_attachment(self, *args, **kwargs):
+        # TODO: create_attachment for a gripper
+        relative_pose = self.create_relative_pose(*args, **kwargs)
+        return relative_pose.get_attachment()
+
+    def __repr__(self):
+        return "g{}".format(id(self) % 1000)
+
+
+class ParentBody(object):  # TODO: inherit from Shape?
+    def __init__(self, body=None, link=BASE_LINK, client=None, **kwargs):
+        self.body = body
+        self.client = client
+        self.link = link
+
+    def __iter__(self):
+        return iter([self.body, self.link])
+
+    def get_pose(self):
+        if self.body is None:
+            return unit_pose()
+        return get_link_pose(self.body, self.link, client=self.client)
+
+    # TODO: hash & equals by extending tuple
+    def __repr__(self):
+        return "Parent({})".format(self.body)

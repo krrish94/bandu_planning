@@ -3,6 +3,7 @@ from __future__ import print_function
 import math
 import os
 import platform
+import random
 import time
 from dataclasses import asdict, dataclass
 from itertools import product
@@ -10,6 +11,7 @@ from typing import Any, List, Optional, Tuple
 
 import numpy as np
 import pybullet as p
+from scipy.spatial.transform import Rotation as R
 
 DEFAULT_CLIENT = None
 CLIENT = 0
@@ -24,6 +26,9 @@ DEFAULT_EXTENTS = [1, 1, 1]
 DEFAULT_SCALE = [1, 1, 1]
 DEFAULT_NORMAL = [0, 0, 1]
 DEFAULT_HEIGHT = 1
+GRASP_LENGTH = 0.04
+MAX_GRASP_WIDTH = np.inf
+_EPS = np.finfo(float).eps * 4.0
 
 
 @dataclass
@@ -139,6 +144,12 @@ class AABB:
 
 
 @dataclass
+class OOBB:
+    aabb: AABB
+    pose: Pose
+
+
+@dataclass
 class CollisionShapeData:
     object_unique_id: int
     linkIndex: int
@@ -237,6 +248,102 @@ class MouseEvent:
     mousePosY: int
     buttonIndex: int
     buttonState: str
+
+
+@dataclass
+class ConstraintInfo:
+    parentBodyUniqueId: int
+    parentJointIndex: int
+    childBodyUniqueId: int
+    childLinkIndex: int
+    constraintType: int
+    jointAxis: Tuple[float, float, float]
+    jointPivotInParent: Tuple[float, float, float]
+    jointPivotInChild: Tuple[float, float, float]
+    jointFrameOrientationParent: Tuple[float, float, float, float]
+    jointFrameOrientationChild: Tuple[float, float, float, float]
+    maxAppliedForce: float
+
+
+def remove_redundant(path, tolerance=1e-3):
+    assert path
+    new_path = [path[0]]
+    for conf in path[1:]:
+        difference = get_difference(new_path[-1], np.array(conf))
+        if not np.allclose(
+            np.zeros(len(difference)), difference, atol=tolerance, rtol=0
+        ):
+            new_path.append(conf)
+    return new_path
+
+
+def waypoints_from_path(path, difference_fn=None, tolerance=1e-3):
+    if difference_fn is None:
+        difference_fn = get_difference
+    path = remove_redundant(path, tolerance=tolerance)
+    if len(path) < 2:
+        return path
+    waypoints = [path[0]]
+    last_conf = path[1]
+    last_difference = get_unit_vector(difference_fn(last_conf, waypoints[-1]))
+    for conf in path[2:]:
+        difference = get_unit_vector(difference_fn(conf, waypoints[-1]))
+        if not np.allclose(last_difference, difference, atol=tolerance, rtol=0):
+            waypoints.append(last_conf)
+            difference = get_unit_vector(difference_fn(conf, waypoints[-1]))
+        last_conf = conf
+        last_difference = difference
+    waypoints.append(last_conf)
+    return waypoints
+
+
+def get_com_pose(body, link):  # COM = center of mass
+    if link == BASE_LINK:
+        return get_pose(body)
+    link_state = get_link_state(body, link)
+    # urdfLinkFrame = comLinkFrame * localInertialFrame.inverse()
+    return link_state.linkWorldPosition, link_state.linkWorldOrientation
+
+
+def add_fixed_constraint(
+    body, robot, robot_link=BASE_LINK, max_force=None, client=None, **kwargs
+):
+    client = client or DEFAULT_CLIENT
+    body_link = BASE_LINK
+    body_pose = get_pose(body)
+    end_effector_pose = get_com_pose(robot, robot_link)
+    grasp_pose = multiply(invert(end_effector_pose), body_pose)
+    point, quat = grasp_pose
+
+    constraint = client.createConstraint(
+        int(robot),
+        robot_link,
+        body,
+        body_link,  # Both seem to work
+        p.JOINT_FIXED,
+        jointAxis=unit_point(),
+        parentFramePosition=point,
+        childFramePosition=unit_point(),
+        parentFrameOrientation=quat,
+        childFrameOrientation=unit_quat(),
+    )
+    if max_force is not None:
+        client.changeConstraint(constraint, maxForce=max_force)
+    return constraint
+
+
+def remove_debug(debug, client=None, **kwargs):
+    client = client or DEFAULT_CLIENT
+    client.removeUserDebugItem(debug)
+
+
+def is_fixed_base(body, **kwargs):
+    return get_mass(body, **kwargs) == STATIC_MASS
+
+
+def remove_constraint(constraint, client=None, **kwargs):
+    client = client or DEFAULT_CLIENT
+    client.removeConstraint(constraint)
 
 
 def get_urdf_flags(cache=False, cylinder=False, merge=False, sat=False, **kwargs):
@@ -516,6 +623,26 @@ def buffer_aabb(aabb, buffer):
 def get_link_state(body, link, kinematics=True, velocity=True, client=None, **kwargs):
     client = client or DEFAULT_CLIENT
     return LinkState(*client.getLinkState(int(body), link))
+
+
+def get_constraints(client=None, **kwargs):
+    client = client or DEFAULT_CLIENT
+    return [client.getConstraintUniqueId(i) for i in range(client.getNumConstraints())]
+
+
+def get_constraint_info(constraint, client=None, **kwargs):  # getConstraintState
+    # TODO: four additional arguments
+    client = client or DEFAULT_CLIENT
+    return ConstraintInfo(*client.getConstraintInfo(constraint)[:11])
+
+
+def get_fixed_constraints():
+    fixed_constraints = []
+    for constraint in get_constraints():
+        constraint_info = get_constraint_info(constraint)
+        if constraint_info.constraintType == p.JOINT_FIXED:
+            fixed_constraints.append(constraint)
+    return fixed_constraints
 
 
 def get_link_pose(body, link, **kwargs):
@@ -1561,6 +1688,12 @@ def wait_for_duration(duration):
         update_viewer()
 
 
+def randomize(iterable):  # TODO: bisect
+    sequence = list(iterable)
+    random.shuffle(sequence)
+    return sequence
+
+
 def wait_for_user(message="Press enter to continue", **kwargs):
     if has_gui(**kwargs) and is_darwin():
         return threaded_input(message)
@@ -1996,3 +2129,498 @@ def interpolate_joint_waypoints(
                 return None
             path.append(q)  # TODO: could instead yield
     return path
+
+
+def get_lifetime(lifetime):
+    if lifetime is None:
+        return 0
+    return lifetime
+
+
+def add_text(
+    text,
+    position=unit_point(),
+    color=BLACK,
+    lifetime=None,
+    parent=NULL_ID,
+    parent_link=BASE_LINK,
+    client=None,
+    **kwargs,
+):
+    client = client or DEFAULT_CLIENT
+    return client.addUserDebugText(
+        str(text),
+        textPosition=position,
+        textColorRGB=color[:3],  # textSize=1,
+        lifeTime=get_lifetime(lifetime),
+        parentObjectUniqueId=parent,
+        parentLinkIndex=parent_link,
+    )
+
+
+def add_line(
+    start,
+    end,
+    color=BLACK,
+    width=1,
+    lifetime=None,
+    parent=NULL_ID,
+    parent_link=BASE_LINK,
+    client=None,
+    **kwargs,
+):
+    client = client or DEFAULT_CLIENT
+    assert (len(start) == 3) and (len(end) == 3)
+    # time.sleep(1e-3) # When too many lines are added within a short period of time, the following error can occur
+    return client.addUserDebugLine(
+        start,
+        end,
+        lineColorRGB=color[:3],
+        lineWidth=width,
+        lifeTime=get_lifetime(lifetime),
+        parentObjectUniqueId=parent,
+        parentLinkIndex=parent_link,
+    )
+
+
+def draw_point(point, size=0.01, **kwargs):
+    lines = []
+    for i in range(len(point)):
+        axis = np.zeros(len(point))
+        axis[i] = 1.0
+        p1 = np.array(point) - size / 2 * axis
+        p2 = np.array(point) + size / 2 * axis
+        lines.append(add_line(p1, p2, **kwargs))
+    return lines
+
+
+def draw_collision_info(collision_info, **kwargs):
+    point1 = collision_info.positionOnA
+    point2 = collision_info.positionOnB
+    # direction = np.array(collision_info.contactNormalOnB)*collision_info.contactDistance
+    # assert np.allclose(point1, point2 + direction)
+    handles = [add_line(point1, point2, **kwargs)]
+    for point in [point1, point2]:
+        handles.extend(draw_point(point, **kwargs))
+    return handles
+
+
+def get_top_and_bottom_grasps(
+    body,
+    body_aabb,
+    body_pose,
+    tool_pose=unit_pose(),
+    under=False,
+    max_width=MAX_GRASP_WIDTH,
+    grasp_length=GRASP_LENGTH,
+    **kwargs,
+):
+    # TODO: rename the box grasps
+    # from IPython import embed; embed()
+    rotation_matrix = R.from_quat(list(body_pose[1]))
+
+    rotation_matrix = rotation_matrix.as_matrix()
+    best_axis = np.argmax(np.abs(rotation_matrix[2, :3]))
+    direction = np.sign(rotation_matrix[2, best_axis])
+
+    dims = np.array([*get_aabb_extent(body_aabb)])
+    w, l, h = dims
+    mask = np.zeros(3)
+    mask[best_axis] = 1.0
+
+    distance = dims[best_axis] / 2.0 - grasp_length
+    translate_z = Pose(point=np.array([0.0, 0.0, distance]))
+
+    if best_axis == 2:
+        if direction > 0.0:
+            val = np.pi
+        else:
+            val = 0.0
+        reflect_z = Pose(euler=[val, 0, 0])
+    elif best_axis == 1:
+        if direction > 0.0:
+            val = -np.pi / 2.0
+        else:
+            val = np.pi / 2.0
+        reflect_z = Pose(euler=[val, 0, 0])
+    else:
+        if direction > 0.0:
+            val = np.pi / 2.0
+        else:
+            val = -np.pi / 2.0
+        reflect_z = Pose(euler=[0, val, 0])
+
+    grasps = []
+    if w <= max_width:
+        for i in range(1 + under):
+            rotate_z = Pose(euler=[0, 0, math.pi / 2 + i * math.pi])
+            grasps += [
+                multiply(
+                    tool_pose,
+                    translate_z,
+                    rotate_z,
+                    reflect_z,
+                )
+            ]
+    if l <= max_width:
+        for i in range(1 + under):
+            rotate_z = Pose(euler=[0, 0, i * math.pi])
+            grasps += [multiply(tool_pose, translate_z, rotate_z, reflect_z)]
+
+    return list(reversed(grasps))
+
+
+def empty_sequence():
+    return iter([])
+
+
+def get_mass(body, link=BASE_LINK, **kwargs):  # mass in kg
+    # TODO: get full mass
+    return get_dynamics_info(body, link, **kwargs).mass
+
+
+def convex_combination(x, y, w=0.5):
+    return (1 - w) * np.array(x) + w * np.array(y)
+
+
+def halton_generator(d, seed=None):
+    import ghalton
+
+    if seed is None:
+        seed = random.randint(0, 1000)
+    # sequencer = ghalton.Halton(d)
+    sequencer = ghalton.GeneralizedHalton(d, seed)
+    # sequencer.reset()
+    while True:
+        [weights] = sequencer.get(1)
+        yield np.array(weights)
+
+
+def uniform_generator(d):
+    while True:
+        yield np.random.uniform(size=d)
+
+
+def unit_generator(d, use_halton=False, **kwargs):
+    if use_halton:
+        try:
+            import ghalton
+        except ImportError:
+            print("ghalton is not installed (https://pypi.org/project/ghalton/)")
+            use_halton = False
+    return halton_generator(d) if use_halton else uniform_generator(d)
+
+
+def interval_generator(lower, upper, **kwargs):
+    assert len(lower) == len(upper)
+    assert np.less_equal(lower, upper).all()
+    if np.equal(lower, upper).all():
+        return iter([lower])
+    return (
+        convex_combination(lower, upper, w=weights)
+        for weights in unit_generator(d=len(lower), **kwargs)
+    )
+
+
+def get_sample_fn(body, joints, custom_limits={}, **kwargs):
+    lower_limits, upper_limits = get_custom_limits(
+        body, joints, custom_limits, circular_limits=CIRCULAR_LIMITS, **kwargs
+    )
+    generator = interval_generator(lower_limits, upper_limits, **kwargs)
+
+    def fn():
+        return tuple(next(generator))
+
+    return fn
+
+
+def unit_vector(data, axis=None, out=None):
+    if out is None:
+        data = np.array(data, dtype=np.float64, copy=True)
+        if data.ndim == 1:
+            data /= math.sqrt(np.dot(data, data))
+            return data
+    else:
+        if out is not data:
+            out[:] = np.array(data, copy=False)
+        data = out
+    length = np.atleast_1d(np.sum(data * data, axis))
+    np.sqrt(length, length)
+    if axis is not None:
+        length = np.expand_dims(length, axis)
+    data /= length
+    if out is None:
+        return data
+
+
+def quaternion_slerp(quat0, quat1, fraction, spin=0, shortestpath=True):
+
+    q0 = unit_vector(quat0[:4])
+    q1 = unit_vector(quat1[:4])
+    if fraction == 0.0:
+        return q0
+    elif fraction == 1.0:
+        return q1
+    d = np.dot(q0, q1)
+    if abs(abs(d) - 1.0) < _EPS:
+        return q0
+    if shortestpath and d < 0.0:
+        # invert rotation
+        d = -d
+        q1 *= -1.0
+    angle = math.acos(d) + spin * math.pi
+    if abs(angle) < _EPS:
+        return q0
+    isin = 1.0 / math.sin(angle)
+    q0 *= math.sin((1.0 - fraction) * angle) * isin
+    q1 *= math.sin(fraction * angle) * isin
+    q0 += q1
+    return q0
+
+
+def quat_combination(quat1, quat2, fraction=0.5):
+    # return p.getQuaternionSlerp(quat1, quat2, interpolationFraction=fraction)
+    return quaternion_slerp(quat1, quat2, fraction)
+
+
+def clip(value, min_value=-np.inf, max_value=+np.inf):
+    return min(max(min_value, value), max_value)
+
+
+def quat_angle_between(quat0, quat1):
+    delta = p.getDifferenceQuaternion(quat0, quat1)
+    d = clip(delta[-1], min_value=-1.0, max_value=1.0)
+    angle = math.acos(d)
+    return angle
+
+
+def get_pose_distance(pose1, pose2):
+    pos1, quat1 = pose1
+    pos2, quat2 = pose2
+    pos_distance = get_distance(pos1, pos2)
+    ori_distance = quat_angle_between(quat1, quat2)
+    return pos_distance, ori_distance
+
+
+def interpolate_poses(pose1, pose2, pos_step_size=0.01, ori_step_size=np.pi / 16):
+    pos1, quat1 = pose1
+    pos2, quat2 = pose2
+    num_steps = max(
+        2,
+        int(
+            math.ceil(
+                max(
+                    np.divide(
+                        get_pose_distance(pose1, pose2), [pos_step_size, ori_step_size]
+                    )
+                )
+            )
+        ),
+    )
+    yield pose1
+    for w in np.linspace(0, 1, num=num_steps, endpoint=True)[1:-1]:
+        pos = convex_combination(pos1, pos2, w=w)
+        quat = quat_combination(quat1, quat2, fraction=w)
+        yield (pos, quat)
+    yield pose2
+
+
+def unit_from_theta(theta):
+    return np.array([np.cos(theta), np.sin(theta)])
+
+
+def sample_reachable_base(robot, point, reachable_range=(0.25, 1.0)):
+    radius = np.random.uniform(*reachable_range)
+    x, y = radius * unit_from_theta(np.random.uniform(-np.pi, np.pi)) + point[:2]
+    yaw = np.random.uniform(*CIRCULAR_LIMITS)
+    base_values = (x, y, yaw)
+    return base_values
+
+
+def uniform_pose_generator(robot, gripper_pose, **kwargs):
+    point = point_from_pose(gripper_pose)
+    while True:
+        base_values = sample_reachable_base(robot, point, **kwargs)
+        if base_values is None:
+            break
+        yield base_values
+
+
+def aabb_empty(aabb):
+    lower, upper = aabb
+    return np.less(upper, lower).any()
+
+
+def sample_aabb(aabb):
+    lower, upper = aabb
+    return np.random.uniform(lower, upper)
+
+
+def sample_placement_on_aabb(
+    top_body,
+    bottom_aabb,
+    top_pose=unit_pose(),
+    percent=1.0,
+    max_attempts=50,
+    epsilon=1e-3,
+    **kwargs,
+):
+    # TODO: transform into the coordinate system of the bottom
+    # TODO: maybe I should instead just require that already in correct frame
+    for _ in range(max_attempts):
+        theta = np.random.uniform(*CIRCULAR_LIMITS)
+        rotation = Euler(yaw=theta)
+        set_pose(top_body, multiply(Pose(euler=rotation), top_pose), **kwargs)
+        center, extent = get_center_extent(top_body, **kwargs)
+        lower = (np.array(bottom_aabb[0]) + percent * extent / 2)[
+            :2
+        ]  # TODO: scale_aabb
+        upper = (np.array(bottom_aabb[1]) - percent * extent / 2)[:2]
+        aabb = AABB(lower, upper)
+        if aabb_empty(aabb):
+            continue
+        x, y = sample_aabb(aabb)
+        z = (bottom_aabb[1] + extent / 2.0)[2] + epsilon
+        point = np.array([x, y, z]) + (get_point(top_body, **kwargs) - center)
+        pose = multiply(Pose(point, rotation), top_pose)
+        set_pose(top_body, pose, **kwargs)
+        return pose
+    return None
+
+
+def all_between(lower_limits, values, upper_limits):
+    assert len(lower_limits) == len(values)
+    assert len(values) == len(upper_limits)
+    return (
+        np.less_equal(lower_limits, values).all()
+        and np.less_equal(values, upper_limits).all()
+    )
+
+
+def inverse_kinematics_helper(
+    robot, link, target_pose, null_space=None, client=None, **kwargs
+):
+    (target_point, target_quat) = target_pose
+    assert target_point is not None
+    if null_space is not None:
+        assert target_quat is not None
+        lower, upper, ranges, rest = null_space
+        kinematic_conf = client.calculateInverseKinematics(
+            int(robot),
+            link,
+            target_point,
+            lowerLimits=lower,
+            upperLimits=upper,
+            jointRanges=ranges,
+            restPoses=rest,
+        )
+    elif target_quat is None:
+        # ikSolver = p.IK_DLS or p.IK_SDLS
+        kinematic_conf = client.calculateInverseKinematics(
+            int(robot), link, target_point
+        )
+    else:
+        # TODO: calculateInverseKinematics2
+        kinematic_conf = client.calculateInverseKinematics(
+            int(robot), link, target_point, target_quat
+        )
+    if (kinematic_conf is None) or any(map(math.isnan, kinematic_conf)):
+        return None
+    return kinematic_conf
+
+
+def is_point_close(point1, point2, tolerance=1e-3):
+    return all_close(point1, point2, atol=tolerance)
+
+
+def all_close(a, b, atol=1e-6, rtol=0.0):
+    assert len(a) == len(b)  # TODO: shape
+    return np.allclose(a, b, atol=atol, rtol=rtol)
+
+
+def is_quat_close(quat1, quat2, tolerance=1e-3 * np.pi):
+    # TODO: normalize quats?
+    # Also could compute the inner product
+    return any(
+        all_close(quat1, sign * np.array(quat2), atol=tolerance) for sign in [-1.0, +1]
+    )
+
+
+def is_pose_close(
+    pose, target_pose, pos_tolerance=1e-3, ori_tolerance=1e-3 * np.pi
+):  # TODO: are_poses_close
+    (point, quat) = pose
+    (target_point, target_quat) = target_pose
+    if (target_point is not None) and not is_point_close(
+        point, target_point, tolerance=pos_tolerance
+    ):
+        return False
+    if (target_quat is not None) and not is_quat_close(
+        quat, target_quat, tolerance=ori_tolerance
+    ):
+        return False
+    return True
+
+
+def inverse_kinematics(
+    robot,
+    link,
+    target_pose,
+    max_iterations=200,
+    max_time=np.inf,
+    custom_limits={},
+    **kwargs,
+):
+    start_time = time.time()
+    movable_joints = get_movable_joints(robot)
+    for iteration in range(max_iterations):
+        # TODO: stop is no progress (converged)
+        # TODO: stop if collision or invalid joint limits
+        if elapsed_time(start_time) >= max_time:
+            return None
+        kinematic_conf = inverse_kinematics_helper(robot, link, target_pose)
+        if kinematic_conf is None:
+            return None
+        set_joint_positions(robot, movable_joints, kinematic_conf, **kwargs)
+        if is_pose_close(get_link_pose(robot, link), target_pose, **kwargs):
+            break
+    else:
+        return None
+    lower_limits, upper_limits = get_custom_limits(
+        robot, movable_joints, custom_limits, **kwargs
+    )
+    if not all_between(lower_limits, kinematic_conf, upper_limits):
+        return None
+    return kinematic_conf
+
+
+def get_extend_fn(body, joints, resolutions=None, norm=2, **kwargs):
+    # norm = 1, 2, INF
+    resolutions = get_default_resolutions(body, joints, resolutions, **kwargs)
+    difference_fn = get_difference_fn(body, joints, **kwargs)
+
+    def fn(q1, q2):
+        # steps = int(np.max(np.abs(np.divide(difference_fn(q2, q1), resolutions))))
+        steps = int(
+            np.linalg.norm(np.divide(difference_fn(q2, q1), resolutions), ord=norm)
+        )
+        refine_fn = get_refine_fn(body, joints, num_steps=steps, **kwargs)
+        return refine_fn(q1, q2)
+
+    return fn
+
+
+def recenter_oobb(oobb):
+    aabb, pose = oobb
+    extent = get_aabb_extent(aabb)
+    new_aabb = AABB(-extent / 2.0, +extent / 2.0)
+    return OOBB(new_aabb, multiply(pose, Pose(point=get_aabb_center(aabb))))
+
+
+def scale_aabb(aabb, scale):
+    center = get_aabb_center(aabb)
+    extent = get_aabb_extent(aabb)
+    if np.isscalar(scale):
+        scale = scale * np.ones(len(extent))
+    new_extent = np.multiply(scale, extent)
+    return aabb_from_extent_center(new_extent, center)

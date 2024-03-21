@@ -2,9 +2,9 @@ import argparse
 
 import numpy as np
 import pybullet as p
-from pybullet_tools.utils import wait_if_gui
 
 from bandu_stacking.env import StackingEnvironment
+from bandu_stacking.pb_utils import wait_if_gui
 from bandu_stacking.policies.random_policy import RandomPolicy
 
 # from bandu_stacking.policies.skeleton_planner import SkeletonPlanner
