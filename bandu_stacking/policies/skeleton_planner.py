@@ -26,8 +26,6 @@ from bandu_stacking.streams import (
     get_plan_place_fn,
 )
 
-OOBB = namedtuple("OOBB", ["aabb", "pose"])
-
 
 def aabb_height(aabb):
     return aabb[1][2] - aabb[0][2]

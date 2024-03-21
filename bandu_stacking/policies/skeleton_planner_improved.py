@@ -9,13 +9,24 @@ from tqdm import tqdm
 
 from bandu_stacking.bandu_utils import check_collision, mesh_from_obj
 from bandu_stacking.env import TABLE_AABB, get_absolute_pose
-from bandu_stacking.env_utils import PANDA_GROUPS, GroupConf, RelativePose, Sequence
+from bandu_stacking.env_utils import (
+    ARM_GROUP,
+    PANDA_GROUPS,
+    PANDA_TOOL_TIP,
+    GroupConf,
+    PandaRobot,
+    RelativePose,
+    Sequence,
+)
 from bandu_stacking.pb_utils import (
+    AABB,
     Euler,
     Point,
     Pose,
     get_aabb,
+    get_joint_positions,
     get_pose,
+    link_from_name,
     stable_z_on_aabb,
 )
 from bandu_stacking.policies.policy import Action, Policy
@@ -26,16 +37,23 @@ from bandu_stacking.streams import (
     get_plan_place_fn,
 )
 
-OOBB = namedtuple("OOBB", ["aabb", "pose"])
+
+def aabb_height(aabb: AABB):
+    return aabb.upper[2] - aabb.lower[2]
 
 
-def aabb_height(aabb):
-    return aabb[1][2] - aabb[0][2]
+def get_current_confs(robot: PandaRobot, **kwargs):
 
-
-def get_initial_configurations(robot, client):
     return {
-        group: GroupConf(robot, group, important=True, client=client)
+        group: GroupConf(
+            robot,
+            group,
+            get_joint_positions(
+                robot, robot.get_group_joints(group, **kwargs), **kwargs
+            ),
+            important=True,
+            **kwargs,
+        )
         for group in PANDA_GROUPS
     }
 
@@ -51,29 +69,27 @@ def get_random_placement_pose(obj, surface_aabb, client):
     )
 
 
-def find_pick_plan(GROUP, obj, pose, grasp, base_conf, pick_planner):
+def find_pick_plan(obj, pose, grasp, base_conf, pick_planner):
     pick = None
     while not pick:
-        pick = pick_planner(GROUP, obj, pose, grasp, base_conf)
+        pick = pick_planner(obj, pose, grasp, base_conf)
     return pick
 
 
-def find_place_plan(GROUP, obj, place_pose, grasp, base_conf, place_planner, client):
+def find_place_plan(obj, place_pose, grasp, base_conf, place_planner, client):
     place = None
     while not place:
         place_rp = RelativePose(
             obj, parent=None, relative_pose=place_pose, client=client
         )
-        place = place_planner(GROUP, obj, place_rp, grasp, base_conf)
+        place = place_planner(obj, place_rp, grasp, base_conf)
     return place
 
 
-def find_motion_plan(GROUP, start_conf, end_conf, motion_planner, attachments=[]):
+def find_motion_plan(start_conf, end_conf, motion_planner, attachments=[]):
     motion_plan = None
     while not motion_plan:
-        (motion_plan,) = motion_planner(
-            GROUP, start_conf, end_conf, attachments=attachments
-        )
+        (motion_plan,) = motion_planner(start_conf, end_conf, attachments=attachments)
     return motion_plan
 
 
@@ -96,31 +112,30 @@ def get_pick_place_plan(abstract_action, env):
         robot, env.block_ids, grasp_mode="top", client=client
     )
 
-    init_confs = get_initial_configurations(robot, client)
+    init_confs = get_current_confs(robot, client=client)
     pose, base_conf = RelativePose(obj, client=client), init_confs["base"]
-    q1 = init_confs[GROUP]
+    q1 = init_confs[ARM_GROUP]
     pose = RelativePose(obj, client=client)
 
-    (grasp,) = next(grasp_finder(GROUP, obj, obj_aabb, obj_pose))
+    (grasp,) = next(grasp_finder(obj, obj_aabb, obj_pose))
 
-    pick = find_pick_plan(GROUP, obj, pose, grasp, base_conf, pick_planner)
+    pick = find_pick_plan(obj, pose, grasp, base_conf, pick_planner)
     q2, at1 = pick
 
     if placement_pose is None:
         placement_pose = get_random_placement_pose(obj, surface_aabb, client)
 
     place = find_place_plan(
-        GROUP, obj, placement_pose, grasp, base_conf, place_planner, client
+        obj, placement_pose, grasp, base_conf, place_planner, client
     )
     q3, at2 = place
 
-    _, _, tool_name = robot.manipulators[robot.side_from_arm(GROUP)]
-    attachment = grasp.create_attachment(robot, link=robot.link_from_name(tool_name))
-
-    motion_plan1 = find_motion_plan(GROUP, q1, q2, motion_planner)
-    motion_plan2 = find_motion_plan(
-        GROUP, q2, q3, motion_planner, attachments=[attachment]
+    attachment = grasp.create_attachment(
+        robot, link=link_from_name(robot, PANDA_TOOL_TIP, client=client)
     )
+
+    motion_plan1 = find_motion_plan(q1, q2, motion_planner)
+    motion_plan2 = find_motion_plan(q2, q3, motion_planner, attachments=[attachment])
 
     env.robot.remove_components()
 

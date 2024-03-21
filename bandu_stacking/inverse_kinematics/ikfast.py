@@ -45,14 +45,10 @@ SETUP_FILENAME = "setup.py"
 
 
 def get_module_name(ikfast_info):
-    return "ikfast.{}".format(ikfast_info.module_name)
+    return "bandu_stacking.inverse_kinematics.{}".format(ikfast_info.module_name)
 
 
 def import_ikfast(ikfast_info):
-    # https://stackoverflow.com/questions/67631/how-to-import-a-module-given-the-full-path
-    # print(sys.modules['__main__'].__file__)
-    # return importlib.import_module('pybullet_tools.ikfast.{}'.format(ikfast_info.module_name), package=None)
-    # return importlib.import_module('{}'.format(ikfast_info.module_name), package='pybullet_tools.ikfast')
     return importlib.import_module(get_module_name(ikfast_info), package=None)
 
 

@@ -3,7 +3,6 @@ import random
 import time
 from os import listdir
 from os.path import isfile, join
-from typing import List, Tuple
 
 import numpy as np
 import pybullet as p
@@ -14,16 +13,13 @@ from bandu_stacking.bandu_utils import (
     get_absolute_pose,
     pairwise_collision,
 )
-from bandu_stacking.env_utils import WorldState
+from bandu_stacking.env_utils import WorldState, create_default_env
 from bandu_stacking.pb_utils import (
     AABB,
     Pose,
-    add_data_path,
-    create_box,
+    get_aabb,
     get_aabb_extent,
-    set_camera_pose,
-    set_dynamics,
-    set_pose,
+    remove_body,
     wait_for_duration,
     wait_if_gui,
 )
@@ -34,34 +30,6 @@ TABLE_AABB = AABB(
     upper=(1.53 / 2.0, 1.22 / 2.0, 0.03 / 2.0),
 )
 TABLE_POSE = Pose((0.1, 0, -TABLE_AABB.upper[2]))
-
-
-def create_default_env(client=None, **kwargs):
-    set_camera_pose(
-        camera_point=[0.75, -0.75, 1.25], target_point=[-0.75, 0.75, 0.0], client=client
-    )
-
-    add_data_path()
-    floor, _ = add_table(*get_aabb_extent(TABLE_AABB), client=client)
-    obstacles = [
-        floor,  # collides with the robot when MAX_DISTANCE >= 5e-3
-    ]
-
-    for obst in obstacles:
-        set_dynamics(
-            obst,
-            lateralFriction=1.0,  # linear (lateral) friction
-            spinningFriction=1.0,  # torsional friction around the contact normal
-            rollingFriction=0.01,  # torsional friction orthogonal to contact normal
-            restitution=0.0,  # restitution: 0 => inelastic collision, 1 => elastic collision
-            client=client,
-        )
-
-    client.setGravity(0, 0, -10)
-
-    return floor, obstacles
-
-
 DEFAULT_TS = 5e-3
 
 
@@ -160,7 +128,9 @@ class StackingEnvironment:
                         client=self.client,
                     )
                 )
-                self.bounding_boxes.append(self.client.getAABB(self.block_ids[-1]))
+                self.bounding_boxes.append(
+                    get_aabb(self.block_ids[-1], client=self.client)
+                )
         elif object_set == "bandu":
             self.block_ids, self.bounding_boxes = self.add_bandu_objects()
         elif object_set == "random":
@@ -200,7 +170,7 @@ class StackingEnvironment:
             bandu_urdf = os.path.join(bandu_model_path, random.choice(bandu_urdfs))
             obj = self.client.loadURDF(bandu_urdf, globalScaling=0.002)
             block_ids.append(obj)
-            bounding_boxes.append(self.client.getAABB(block_ids[-1]))
+            bounding_boxes.append(get_aabb(block_ids[-1]))
             self.urdf_filenames.append(bandu_urdf)
             # Also store the corresponding full resolution urdf filename for later use
             # (replace "_simplified" with "" in the filename)
@@ -229,7 +199,7 @@ class StackingEnvironment:
             random_urdf = os.path.join(random_model_path, random.choice(random_urdfs))
             obj = self.client.loadURDF(random_urdf, globalScaling=0.1)
             block_ids.append(obj)
-            bounding_boxes.append(self.client.getAABB(block_ids[-1]))
+            bounding_boxes.append(get_aabb(block_ids[-1], client=self.client))
         return block_ids, bounding_boxes
 
     def sample_action(self, mesh_dicts):
@@ -239,7 +209,7 @@ class StackingEnvironment:
     def sample_state(self):
         if self.object_set == "bandu":
             for object_id in self.block_ids:
-                self.client.removeBody(object_id)
+                remove_body(object_id, client=self.client)
             self.urdf_filenames = []
             self.fullres_urdf_filenames = []
             self.block_ids, self.bounding_boxes = self.add_bandu_objects()
@@ -390,17 +360,8 @@ class StackingEnvironment:
                 baseOrientation=pos_ori[1],
             )
             self.block_ids.append(block_id)
-            self.bounding_boxes.append(self.client.getAABB(self.block_ids[-1]))
-            # # print(self.block_ids[-1])
-            # # print(properties)
-            # # print("#########")
-            # self.client.changeDynamics(
-            #     self.block_ids[-1],
-            #     -1,
-            #     mass=properties[0],
-            #     lateralFriction=properties[1],
-            #     # restitution=properties[5],
-            # )
+            self.bounding_boxes.append(get_aabb(self.block_ids[-1], client=self.client))
+
             self.client.changeDynamics(
                 self.block_ids[-1],
                 -1,

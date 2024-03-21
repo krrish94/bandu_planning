@@ -23,6 +23,7 @@ from bandu_stacking.pb_utils import (
     AABB,
     Pose,
     create_box,
+    get_aabb,
     get_aabb_extent,
     load_pybullet,
     pairwise_collision,
@@ -196,7 +197,9 @@ class StackingEnvironment:
                         client=self.client,
                     )
                 )
-                self.bounding_boxes.append(self.client.getAABB(self.block_ids[-1]))
+                self.bounding_boxes.append(
+                    get_aabb(self.block_ids[-1], client=self.client)
+                )
         elif object_set == "bandu":
             self.block_ids, self.bounding_boxes = self.add_bandu_objects()
         elif object_set == "random":
@@ -229,7 +232,7 @@ class StackingEnvironment:
             bandu_urdf = os.path.join(bandu_model_path, random.choice(bandu_urdfs))
             obj = self.client.loadURDF(bandu_urdf, globalScaling=0.002)
             block_ids.append(obj)
-            bounding_boxes.append(self.client.getAABB(block_ids[-1]))
+            bounding_boxes.append(get_aabb(block_ids[-1], client=self.client))
         return block_ids, bounding_boxes
 
     def add_random_objects(self):
@@ -246,7 +249,7 @@ class StackingEnvironment:
             random_urdf = os.path.join(random_model_path, random.choice(random_urdfs))
             obj = self.client.loadURDF(random_urdf, globalScaling=0.1)
             block_ids.append(obj)
-            bounding_boxes.append(self.client.getAABB(block_ids[-1]))
+            bounding_boxes.append(get_aabb(block_ids[-1], client=self.client))
         return block_ids, bounding_boxes
 
     def sample_action(self, mesh_dicts):
@@ -371,7 +374,7 @@ class StackingEnvironment:
         return next_state
 
     def reset(self):
-        self.robot.reset()
+        self.robot.reset(client=self.client)
         initial_state = self.sample_state()
         self.set_sim_state(initial_state)
         self.simulate_until_static()

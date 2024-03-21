@@ -11,12 +11,13 @@ from typing import Any, List, Optional, Tuple
 
 import numpy as np
 import pybullet as p
+from scipy.interpolate import CubicSpline, interp1d, make_interp_spline, make_lsq_spline
 from scipy.spatial import ConvexHull
 from scipy.spatial.transform import Rotation as R
 
 from bandu_stacking.motion_planning.motion_planners.meta import solve
 
-DEFAULT_CLIENT = p
+DEFAULT_CLIENT = None
 CLIENT = 0
 BASE_LINK = -1
 STATIC_MASS = 0
@@ -31,6 +32,7 @@ DEFAULT_NORMAL = [0, 0, 1]
 DEFAULT_HEIGHT = 1
 GRASP_LENGTH = 0.04
 MAX_GRASP_WIDTH = np.inf
+DEFAULT_SPEED_FRACTION = 0.3
 _EPS = np.finfo(float).eps * 4.0
 
 
@@ -283,6 +285,230 @@ def remove_redundant(path, tolerance=1e-3):
         ):
             new_path.append(conf)
     return new_path
+
+
+def compute_min_duration(distance, max_velocity, acceleration):
+    if distance == 0:
+        return 0
+    max_ramp_duration = max_velocity / acceleration
+    if acceleration == np.inf:
+        # return distance / max_velocity
+        ramp_distance = 0.0
+    else:
+        ramp_distance = 0.5 * acceleration * math.pow(max_ramp_duration, 2)
+    remaining_distance = distance - 2 * ramp_distance
+    if 0 <= remaining_distance:  # zero acceleration
+        remaining_time = remaining_distance / max_velocity
+        total_time = 2 * max_ramp_duration + remaining_time
+    else:
+        half_time = np.sqrt(distance / acceleration)
+        total_time = 2 * half_time
+    return total_time
+
+
+def compute_position(ramp_time, max_duration, acceleration, t):
+    velocity = acceleration * ramp_time
+    max_time = max_duration - 2 * ramp_time
+    t1 = clip(t, 0, ramp_time)
+    t2 = clip(t - ramp_time, 0, max_time)
+    t3 = clip(t - ramp_time - max_time, 0, ramp_time)
+    # assert t1 + t2 + t3 == t
+    return (
+        0.5 * acceleration * math.pow(t1, 2)
+        + velocity * t2
+        + velocity * t3
+        - 0.5 * acceleration * math.pow(t3, 2)
+    )
+
+
+def compute_ramp_duration(distance, acceleration, duration):
+    discriminant = max(
+        0, math.pow(duration * acceleration, 2) - 4 * distance * acceleration
+    )
+    velocity = 0.5 * (duration * acceleration - math.sqrt(discriminant))  # +/-
+    # assert velocity <= max_velocity
+    ramp_time = velocity / acceleration
+    predicted_distance = velocity * (
+        duration - 2 * ramp_time
+    ) + acceleration * math.pow(ramp_time, 2)
+    assert abs(distance - predicted_distance) < 1e-6
+    return ramp_time
+
+
+def add_ramp_waypoints(
+    differences, accelerations, q1, duration, sample_step, waypoints, time_from_starts
+):
+    dim = len(q1)
+    distances = np.abs(differences)
+    time_from_start = time_from_starts[-1]
+
+    ramp_durations = [
+        compute_ramp_duration(distances[idx], accelerations[idx], duration)
+        for idx in range(dim)
+    ]
+    directions = np.sign(differences)
+    for t in np.arange(sample_step, duration, sample_step):
+        positions = []
+        for idx in range(dim):
+            distance = compute_position(
+                ramp_durations[idx], duration, accelerations[idx], t
+            )
+            positions.append(q1[idx] + directions[idx] * distance)
+        waypoints.append(positions)
+        time_from_starts.append(time_from_start + t)
+    return waypoints, time_from_starts
+
+
+def ramp_retime_path(
+    path, max_velocities, acceleration_fraction=np.inf, sample_step=None, **kwargs
+):
+    """
+    :param path:
+    :param max_velocities:
+    :param acceleration_fraction: fraction of velocity_fraction*max_velocity per second
+    :param sample_step:
+    :return:
+    """
+    assert np.all(max_velocities)
+    accelerations = max_velocities * acceleration_fraction
+    dim = len(max_velocities)
+    # difference_fn = get_difference_fn(robot, joints)
+    # TODO: more fine grain when moving longer distances
+
+    # Assuming instant changes in accelerations
+    waypoints = [path[0]]
+    time_from_starts = [0.0]
+    for q1, q2 in get_pairs(path):
+        differences = get_difference(q1, q2)  # assumes not circular anymore
+        # differences = difference_fn(q1, q2)
+        distances = np.abs(differences)
+        duration = max(
+            [
+                compute_min_duration(
+                    distances[idx], max_velocities[idx], accelerations[idx]
+                )
+                for idx in range(dim)
+            ]
+            + [0.0]
+        )
+        time_from_start = time_from_starts[-1]
+        if sample_step is not None:
+            waypoints, time_from_starts = add_ramp_waypoints(
+                differences,
+                accelerations,
+                q1,
+                duration,
+                sample_step,
+                waypoints,
+                time_from_starts,
+            )
+        waypoints.append(q2)
+        time_from_starts.append(time_from_start + duration)
+    return waypoints, time_from_starts
+
+
+def get_max_velocity(body, joint, **kwargs):
+    # Note that the maximum velocity is not used in actual motor control commands at the moment.
+    return get_joint_info(body, joint, **kwargs).jointMaxVelocity
+
+
+def get_max_velocities(body, joints, **kwargs):
+    return tuple(get_max_velocity(body, joint, **kwargs) for joint in joints)
+
+
+def retime_trajectory(
+    robot,
+    joints,
+    path,
+    only_waypoints=False,
+    velocity_fraction=DEFAULT_SPEED_FRACTION,
+    **kwargs,
+):
+    """
+    :param robot:
+    :param joints:
+    :param path:
+    :param velocity_fraction: fraction of max_velocity
+    :return:
+    """
+    path = adjust_path(robot, joints, path, **kwargs)
+    if only_waypoints:
+        path = waypoints_from_path(path)
+    max_velocities = velocity_fraction * np.array(
+        get_max_velocities(robot, joints, **kwargs)
+    )
+    return ramp_retime_path(path, max_velocities, **kwargs)
+
+
+def approximate_spline(time_from_starts, path, k=3, approx=np.inf):
+
+    x = time_from_starts
+    if approx == np.inf:
+        positions = make_interp_spline(
+            time_from_starts, path, k=k, t=None, bc_type="clamped"
+        )
+        positions.x = positions.t[positions.k : -positions.k]
+    else:
+        # TODO: approximation near the endpoints
+        # approx = min(approx, len(x) - 2*k)
+        assert approx <= len(x) - 2 * k
+        t = np.r_[
+            (x[0],) * (k + 1),
+            # np.linspace(x[0]+1e-3, x[-1]-1e-3, num=approx, endpoint=True),
+            np.linspace(x[0], x[-1], num=2 + approx, endpoint=True)[1:-1],
+            (x[-1],) * (k + 1),
+        ]
+        # t = positions.t # Need to slice
+        # w = np.zeros(...)
+        w = None
+        positions = make_lsq_spline(x, path, t, k=k, w=w)
+    positions.x = positions.t[positions.k : -positions.k]
+    return positions
+
+
+def interpolate_path(
+    robot,
+    joints,
+    path,
+    velocity_fraction=DEFAULT_SPEED_FRACTION,
+    k=1,
+    bspline=False,
+    dump=False,
+    **kwargs,
+):
+    path, time_from_starts = retime_trajectory(
+        robot,
+        joints,
+        path,
+        velocity_fraction=velocity_fraction,
+        sample_step=None,
+        **kwargs,
+    )
+    if k == 3:
+        if bspline:
+            positions = approximate_spline(time_from_starts, path, k=k, **kwargs)
+        else:
+            # bc_type= clamped | natural | ((1, 0), (1, 0))
+            positions = CubicSpline(
+                time_from_starts, path, bc_type="clamped", extrapolate=False
+            )
+    else:
+        kinds = {1: "linear", 2: "quadratic", 3: "cubic"}  # slinear
+        positions = interp1d(
+            time_from_starts, path, kind=kinds[k], axis=0, assume_sorted=True
+        )
+
+    if not dump:
+        return positions
+    # TODO: only if CubicSpline
+    velocities = positions.derivative()
+    accelerations = positions.derivative()
+    for i, t in enumerate(positions.x):
+        print(i, round(t, 3), positions(t), velocities(t), accelerations(t))
+    # TODO: compose piecewise functions
+    # TODO: ramp up and ramp down path
+    # TODO: quadratic interpolation between endpoints
+    return positions
 
 
 def waypoints_from_path(path, difference_fn=None, tolerance=1e-3):
@@ -1512,9 +1738,7 @@ def set_joint_states(body, joints, positions, velocities, **kwargs):
 
 def get_dynamics_info(body, link=BASE_LINK, client=None, **kwargs):
     client = client or DEFAULT_CLIENT
-    return DynamicsInfo(
-        *client.getDynamicsInfo(int(body), link)[: len(DynamicsInfo._fields)]
-    )
+    return DynamicsInfo(*client.getDynamicsInfo(int(body), link)[:10])
 
 
 def get_client(client=None):
@@ -3072,3 +3296,53 @@ def multiple_sub_inverse_kinematics(
 
 def matrix_from_quat(quat):
     return np.array(p.getMatrixFromQuaternion(quat)).reshape(3, 3)
+
+
+def get_pairs(sequence):
+    # TODO: lazy version
+    sequence = list(sequence)
+    return safe_zip(sequence[:-1], sequence[1:])
+
+
+def adjust_path(robot, joints, path, initial_conf=None, **kwargs):
+    if path is None:
+        return path
+    if initial_conf is None:
+        initial_conf = path[0]
+        # initial_conf = get_joint_positions(robot, joints)
+    difference_fn = get_difference_fn(robot, joints, **kwargs)
+    differences = [difference_fn(q2, q1) for q1, q2 in get_pairs(path)]
+    adjusted_path = [np.array(initial_conf)]  # Assumed the same as path[0] mod rotation
+    for difference in differences:
+        if not np.array_equal(difference, np.zeros(len(joints))):
+            adjusted_path.append(adjusted_path[-1] + difference)
+    return adjusted_path
+
+
+def step_curve(robot, joints, curve, time_step=2e-2, print_freq=None, **kwargs):
+    start_time = time.time()
+    num_steps = 0
+    time_elapsed = 0.0
+    last_print = time_elapsed
+    for num_steps, (time_elapsed, positions) in enumerate(
+        sample_curve(curve, time_step=time_step)
+    ):
+        set_joint_positions(robot, joints, positions, **kwargs)
+
+        if (print_freq is not None) and (print_freq <= (time_elapsed - last_print)):
+            print(
+                "Step: {} | Sim secs: {:.3f} | Real secs: {:.3f} | Steps/sec {:.3f}".format(
+                    num_steps,
+                    time_elapsed,
+                    elapsed_time(start_time),
+                    num_steps / elapsed_time(start_time),
+                )
+            )
+            last_print = time_elapsed
+        yield positions
+    if print_freq is not None:
+        print(
+            "Simulated {} steps ({:.3f} sim seconds) in {:.3f} real seconds".format(
+                num_steps, time_elapsed, elapsed_time(start_time)
+            )
+        )

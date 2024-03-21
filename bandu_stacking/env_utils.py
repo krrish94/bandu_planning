@@ -11,6 +11,7 @@ import pybullet as p
 import pybullet_utils.bullet_client as bc
 import trimesh
 
+from bandu_stacking.inverse_kinematics.utils import IKFastInfo
 from bandu_stacking.pb_utils import (
     AABB,
     BASE_LINK,
@@ -24,6 +25,7 @@ from bandu_stacking.pb_utils import (
     Pose,
     WorldSaver,
     add_fixed_constraint,
+    adjust_path,
     apply_alpha,
     clone_body,
     create_box,
@@ -54,6 +56,7 @@ from bandu_stacking.pb_utils import (
     get_moving_links,
     get_pose,
     get_relative_pose,
+    interpolate_path,
     invert,
     is_fixed_base,
     joint_from_name,
@@ -70,7 +73,9 @@ from bandu_stacking.pb_utils import (
     set_joint_position,
     set_joint_positions,
     set_pose,
+    step_curve,
     unit_pose,
+    waypoints_from_path,
 )
 
 GRIPPER_GROUP = "main_gripper"
@@ -94,6 +99,19 @@ PANDA_GROUPS = {
     "main_arm": ["panda_joint{}".format(i) for i in range(1, 8)],
     "main_gripper": ["panda_finger_joint1", "panda_finger_joint2"],
 }
+
+PANDA_INFO = IKFastInfo(
+    module_name="franka_panda.ikfast_panda_arm",
+    base_link="panda_link0",
+    ee_link="panda_link8",
+    free_joints=["panda_joint7"],
+)
+
+PANDA_TOOL_TIP = "panda_tool_tip"
+ARM_GROUP = "main_arm"
+GRIPPER_GROUP = "main_gripper"
+
+
 YCB_PATH = os.path.join(SRL_PATH, "ycb")
 USE_CONSTRAINTS = True
 
@@ -393,15 +411,6 @@ class Switch(Command):
         self.body = body
         self.parent = parent
 
-    def switch_client(self, robot):
-        if self.parent is not None:
-            return Switch(
-                self.body,
-                parent=ParentBody(robot, self.parent.link, client=robot.client),
-            )
-        else:
-            return Switch(self.body, parent=None)
-
     def iterate(self, state, **kwargs):
         if self.parent is None and self.body in state.attachments.keys():
             del state.attachments[self.body]
@@ -413,16 +422,14 @@ class Switch(Command):
                 gripper_group,
                 tool_name,
             ) in robot.manipulators.items():
-                if link_from_name(robot, tool_name, client=robot.client) == tool_link:
+                if link_from_name(robot, tool_name, **kwargs) == tool_link:
                     break
             else:
                 raise RuntimeError(tool_link)
             gripper_joints = robot.get_group_joints(gripper_group)
             finger_links = robot.get_finger_links(gripper_joints)
 
-            movable_bodies = [
-                body for body in get_bodies(client=robot.client) if (body != robot)
-            ]
+            movable_bodies = [body for body in get_bodies(**kwargs) if (body != robot)]
 
             # collision_bodies = [body for body in movable_bodies if any_link_pair_collision(
             #    robot, finger_links, body, max_distance=1e-2)]
@@ -439,21 +446,17 @@ class Switch(Command):
                 if (
                     all(
                         get_closest_points(
-                            robot,
-                            body,
-                            link1=link,
-                            max_distance=max_distance,
-                            client=robot.client,
+                            robot, body, link1=link, max_distance=max_distance, **kwargs
                         )
                         for link in finger_links
                     )
-                    and get_mass(body, client=robot.client) != STATIC_MASS
+                    and get_mass(body, **kwargs) != STATIC_MASS
                 )
             ]
 
             if len(collision_bodies) > 0:
                 relative_pose = RelativePose(
-                    collision_bodies[0], parent=self.parent, client=robot.client
+                    collision_bodies[0], parent=self.parent, **kwargs
                 )
                 state.attachments[self.body] = relative_pose
 
@@ -483,8 +486,8 @@ class Switch(Command):
 
             movable_bodies = [
                 body
-                for body in get_bodies(client=self.robot.client)
-                if (body != robot) and not is_fixed_base(body, client=self.robot.client)
+                for body in get_bodies(**kwargs)
+                if (body != robot) and not is_fixed_base(body, **kwargs)
             ]
             # collision_bodies = [body for body in movable_bodies if any_link_pair_collision(
             #    robot, finger_links, body, max_distance=1e-2)]
@@ -515,33 +518,85 @@ class Switch(Command):
 
 
 class Trajectory(Command):
-    _draw = False
+    def __init__(
+        self,
+        body,
+        joints,
+        path,
+        velocity_scale=1.0,
+        contact_links=[],
+        time_after_contact=np.inf,
+        contexts=[],
+        **kwargs,
+    ):
+        self.body = body
+        self.joints = joints
+        self.path = tuple(path)  # waypoints_from_path
+        self.velocity_scale = velocity_scale
+        self.contact_links = tuple(contact_links)
+        self.time_after_contact = time_after_contact
+        self.contexts = tuple(contexts)
+        # self.kwargs = dict(kwargs) # TODO: doesn't save unpacked values
 
-    def __init__(self, path):
-        self.path = tuple(path)
-        # TODO: constructor that takes in this info
+    @property
+    def robot(self):
+        return self.body
 
-    def distance(self, distance_fn=get_distance):
-        total = 0.0
-        for q1, q2 in zip(self.path, self.path[1:]):
-            total += distance_fn(q1.values, q2.values)
-        return total
+    @property
+    def context_bodies(self):
+        return {self.body} | {
+            context.body for context in self.contexts
+        }  # TODO: ancestors
 
-    def iterate(self):
-        for conf in self.path:
-            yield conf
+    def conf(self, positions):
+        return Conf(self.body, self.joints, positions=positions)
+
+    def first(self):
+        return self.conf(self.path[0])
+
+    def last(self):
+        return self.conf(self.path[-1])
 
     def reverse(self):
-        return Trajectory(reversed(self.path))
+        return self.__class__(
+            self.body,
+            self.joints,
+            self.path[::-1],
+            velocity_scale=self.velocity_scale,
+            contact_links=self.contact_links,
+            time_after_contact=self.time_after_contact,
+            contexts=self.contexts,
+        )
 
-    # def __repr__(self):
-    #    return 't{}'.format(id(self) % 1000)
+    def adjust_path(self, **kwargs):
+        current_positions = get_joint_positions(
+            self.body, self.joints, **kwargs
+        )  # Important for adjust_path
+        return adjust_path(
+            self.body, self.joints, [current_positions] + list(self.path), **kwargs
+        )  # Accounts for the wrap around
+
+    def compute_waypoints(self, **kwargs):
+        return waypoints_from_path(
+            adjust_path(self.body, self.joints, self.path, **kwargs)
+        )
+
+    def compute_curve(self, **kwargs):
+        path = self.adjust_path(**kwargs)
+        positions_curve = interpolate_path(self.body, self.joints, path, **kwargs)
+        return positions_curve
+
+    def iterate(self, state, teleport=False, **kwargs):
+        if teleport:
+            set_joint_positions(self.body, self.joints, self.path[-1], **kwargs)
+            return self.path[-1]
+        else:
+            return step_curve(
+                self.body, self.joints, self.compute_curve(**kwargs), **kwargs
+            )
+
     def __repr__(self):
-        d = 0
-        if self.path:
-            conf = self.path[0]
-            d = 3 if isinstance(conf, Pose) else len(conf.joints)
-        return "t({},{})".format(d, len(self.path))
+        return "t{}".format(id(self) % 1000)
 
 
 class GroupTrajectory(Trajectory):
@@ -693,9 +748,6 @@ class PandaRobot:
             "main_gripper": [self.MAX_PANDA_FINGER, self.MAX_PANDA_FINGER],
         }
         return conf
-
-    def arm_conf(self, arm, config):
-        return config
 
     def get_closed_positions(self):
         return {"panda_finger_joint1": 0, "panda_finger_joint2": 0}

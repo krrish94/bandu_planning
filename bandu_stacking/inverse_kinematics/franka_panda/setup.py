@@ -7,7 +7,7 @@ import sys
 
 sys.path.append(os.path.join(os.pardir, os.pardir, os.pardir))
 
-from pybullet_tools.ikfast.compile import compile_ikfast
+from bandu_stacking.inverse_kinematics.compile import compile_ikfast
 
 # Build C++ extension by running: 'python setup.py'
 # see: https://docs.python.org/3/extending/building.html
