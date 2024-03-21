@@ -24,6 +24,7 @@ from bandu_stacking.pb_utils import (
     elapsed_time,
     get_aabb,
     get_aabb_center,
+    get_extend_fn,
     get_moving_links,
     get_pose,
     get_top_and_bottom_grasps,
@@ -31,9 +32,11 @@ from bandu_stacking.pb_utils import (
     multiply,
     pairwise_collision,
     pairwise_collisions,
+    plan_joint_motion,
     point_from_pose,
     quat_from_pose,
     randomize,
+    recenter_oobb,
     scale_aabb,
     set_joint_positions,
     set_pose,
@@ -659,17 +662,11 @@ def get_plan_motion_fn(
     def fn(group, q1, q2, attachments=[]):
         robot_saver.restore()
         print("Plan motion fn {}->{}".format(q1, q2))
-        # if q1 == q2:
-        #     return None
+
         obstacles = list(environment)
         attached = {attachment.child for attachment in attachments}
         obstacles = set(obstacles) - attached
         q1.assign()
-        # if not collisions:
-        #    obstacles = []
-        # TODO: account for large/oversized objects
-
-        # TODO: separate collision resolution for movable
 
         resolutions = math.radians(10) * np.ones(len(q2.joints))
 

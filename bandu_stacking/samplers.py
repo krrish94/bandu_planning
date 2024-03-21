@@ -12,6 +12,7 @@ from bandu_stacking.pb_utils import (
     BodySaver,
     draw_collision_info,
     get_closest_points,
+    get_collision_fn,
     get_sample_fn,
     interpolate_joint_waypoints,
     interpolate_poses,
