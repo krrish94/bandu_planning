@@ -97,7 +97,7 @@ def create_grasp_attachment(robot, grasp, **kwargs):
 
 
 def plan_workspace_motion(
-    robot, tool_waypoints, attachment=None, obstacles=[], max_attempts=2, **kwargs
+    robot, tool_waypoints, attachment=None, obstacles=[], max_attempts=1, **kwargs
 ):
     assert tool_waypoints
 
