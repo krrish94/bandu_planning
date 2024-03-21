@@ -23,6 +23,7 @@ from bandu_stacking.pb_utils import (
     ConfSaver,
     Point,
     Pose,
+    State,
     WorldSaver,
     add_fixed_constraint,
     adjust_path,
@@ -887,11 +888,11 @@ class PandaRobot:
         return self.camera.get_image(**kwargs)
 
 
-class WorldState:
+class WorldState(State):
     def __init__(self, savers=[], attachments={}, client=None):
         # a part of the state separate from PyBullet
         # TODO: other fluent things
-
+        super(WorldState, self).__init__(attachments)
         self.attachments = attachments
         self.world_saver = WorldSaver(client=client)
         self.savers = tuple(savers)

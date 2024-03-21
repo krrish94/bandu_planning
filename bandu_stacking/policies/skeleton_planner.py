@@ -69,37 +69,16 @@ def get_random_placement_pose(obj, surface_aabb, client):
     )
 
 
-def find_pick_plan(obj, pose, grasp, base_conf, pick_planner):
-    pick = None
-    while not pick:
-        pick = pick_planner(obj, pose, grasp, base_conf)
-    return pick
-
-
-def find_place_plan(obj, place_pose, grasp, base_conf, place_planner, client):
-    place = None
-    while not place:
-        place_rp = RelativePose(
-            obj, parent=None, relative_pose=place_pose, client=client
-        )
-        print("[Place Planner] Placement for pose: " + str(place_rp))
-        place = place_planner(obj, place_rp, grasp, base_conf)
-        print("[Place Planner] Place: " + str(place))
-    return place
-
-
-def find_motion_plan(start_conf, end_conf, motion_planner, attachments=[]):
-    motion_plan = None
-    while not motion_plan:
-        (motion_plan,) = motion_planner(start_conf, end_conf, attachments=attachments)
-    return motion_plan
-
-
 def get_pick_place_plan(abstract_action, env):
+
+    MAX_GRASP_ATTEMPTS = 10
+    MAX_PICK_ATTEMPTS = 10
+    MAX_PLACE_ATTEMPTS = 10
+
     client, robot = env.client, env.robot
     client = env.client
     surface_aabb = TABLE_AABB
-    GROUP = "main_arm"
+
     obj = abstract_action.grasp_block
     obj_aabb, obj_pose = get_aabb(obj, client=client), get_pose(obj, client=client)
 
@@ -107,10 +86,15 @@ def get_pick_place_plan(abstract_action, env):
     placement_pose = get_absolute_pose(target_pose, abstract_action)
 
     motion_planner = get_plan_motion_fn(robot, environment=env.block_ids, client=client)
-    pick_planner = get_plan_pick_fn(robot, client=client)
-    place_planner = get_plan_place_fn(robot, client=client)
+    pick_planner = get_plan_pick_fn(
+        robot, max_attempts=MAX_PICK_ATTEMPTS, client=client
+    )
+    place_planner = get_plan_place_fn(
+        robot, max_attempts=MAX_PLACE_ATTEMPTS, client=client
+    )
+
     grasp_finder = get_grasp_gen_fn(
-        robot, env.block_ids, grasp_mode="top", client=client
+        robot, env.block_ids, grasp_mode="mesh", client=client
     )
 
     init_confs = get_current_confs(robot, client=client)
@@ -118,33 +102,55 @@ def get_pick_place_plan(abstract_action, env):
     q1 = init_confs[ARM_GROUP]
     pose = RelativePose(obj, client=client)
 
-    (grasp,) = next(grasp_finder(obj, obj_aabb, obj_pose))
-    print("[Planner] finding pick plan")
-    pick = find_pick_plan(obj, pose, grasp, base_conf, pick_planner)
-    q2, at1 = pick
+    for gi in range(MAX_GRASP_ATTEMPTS):
+        print("[Planner] grasp attempt " + str(gi))
+        (grasp,) = next(grasp_finder(obj, obj_aabb, obj_pose))
 
-    if placement_pose is None:
-        placement_pose = get_random_placement_pose(obj, surface_aabb, client)
+        print("[Planner] finding pick plan")
+        for _ in range(MAX_PICK_ATTEMPTS):
+            pick = pick_planner(obj, pose, grasp, base_conf)
 
-    print("[Planner] finding place plan")
-    place = find_place_plan(
-        obj, placement_pose, grasp, base_conf, place_planner, client
-    )
-    q3, at2 = place
+        if pick is None:
+            continue
 
-    attachment = grasp.create_attachment(
-        robot, link=link_from_name(robot, PANDA_TOOL_TIP, client=client)
-    )
+        q2, at1 = pick
 
-    print("[Planner] finding pick motion plan")
-    motion_plan1 = find_motion_plan(q1, q2, motion_planner)
+        print("[Planner] finding place plan")
+        for _ in range(MAX_PLACE_ATTEMPTS):
+            if placement_pose is None:
+                placement_pose = get_random_placement_pose(obj, surface_aabb, client)
+            place_rp = RelativePose(
+                obj, parent=None, relative_pose=placement_pose, client=client
+            )
+            print("[Place Planner] Placement for pose: " + str(place_rp))
+            place = place_planner(obj, place_rp, grasp, base_conf)
 
-    print("[Planner] finding place motion plan")
-    motion_plan2 = find_motion_plan(q2, q3, motion_planner, attachments=[attachment])
+            if place is not None:
+                break
 
-    env.robot.remove_components(client=client)
+        if place is None:
+            continue
 
-    return placement_pose, Sequence([motion_plan1, at1, motion_plan2, at2])
+        q3, at2 = place
+
+        attachment = grasp.create_attachment(
+            robot, link=link_from_name(robot, PANDA_TOOL_TIP, client=client)
+        )
+
+        print("[Planner] finding pick motion plan")
+        motion_plan1 = motion_planner(q1, q2)
+        if motion_plan1 is None:
+            continue
+
+        print("[Planner] finding place motion plan")
+        motion_plan2 = motion_planner(q2, q3, attachments=[attachment])
+        if motion_plan2 is None:
+            continue
+
+        env.robot.remove_components(client=client)
+
+        return Sequence([motion_plan1, at1, motion_plan2, at2])
+    return None
 
 
 class SkeletonPlanner(Policy):
@@ -507,7 +513,15 @@ class SkeletonPlanner(Policy):
                         str(aai), str(aa)
                     )
                 )
-                self.plan.append(get_pick_place_plan(aa, env=self.env)[1])
+                sequence = get_pick_place_plan(aa, env=self.env)
+                if sequence is None:
+                    print("[Planner] Skeleton CSP failed")
+                    import sys
+
+                    sys.exit()
+                else:
+                    self.plan.append(sequence)
+
                 current_state = self.env.step_abstract(current_state, aa)
 
         elif len(self.plan) == 0:

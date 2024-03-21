@@ -15,7 +15,7 @@ from scipy.interpolate import CubicSpline, interp1d, make_interp_spline, make_ls
 from scipy.spatial import ConvexHull
 from scipy.spatial.transform import Rotation as R
 
-from bandu_stacking.motion_planning.motion_planners.meta import solve
+from bandu_stacking.motion_planning.motion_planners.rrt_connect import birrt
 
 DEFAULT_CLIENT = None
 CLIENT = 0
@@ -2469,6 +2469,24 @@ def draw_collision_info(collision_info, **kwargs):
     return handles
 
 
+class State(object):
+    # TODO: apply context to the trajectories
+    def __init__(self, attachments={}):
+        self.attachments = dict(attachments)
+
+    def propagate(self):
+        # Derived values
+        for relative_pose in self.attachments.values():
+            # TODO: topological sort
+            relative_pose.assign()
+
+    def copy(self):  # update
+        return self.__class__(attachments=self.attachments)
+
+    def __repr__(self):
+        return "{}({})".format(self.__class__.__name__, sorted(self.attachments))
+
+
 def get_top_and_bottom_grasps(
     body,
     body_aabb,
@@ -3171,15 +3189,13 @@ def plan_joint_motion(
     ):
         return None
 
-    return solve(
+    return birrt(
         start_conf,
         end_conf,
         distance_fn,
         sample_fn,
         extend_fn,
         collision_fn,
-        algorithm=algorithm,
-        weights=weights,
         **kwargs,
     )
 

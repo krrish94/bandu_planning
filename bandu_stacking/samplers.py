@@ -171,7 +171,7 @@ def plan_workspace_motion(
             else:
                 set_joint_positions(robot, arm_joints, arm_waypoints[-1], **kwargs)
                 if attachment is not None:
-                    attachment.assign()
+                    attachment.assign(**kwargs)
                 if (
                     any(
                         pairwise_collisions(
@@ -274,7 +274,7 @@ def sample_attachment_base_confs(robot, obj, pose, environment=[], **kwargs):
         robot_saver.restore()
         pose.assign(**kwargs)
         base_conf = GroupConf(robot, robot.base_group, positions=base_conf, **kwargs)
-        base_conf.assign()
+        base_conf.assign(**kwargs)
         if pairwise_collisions(robot, obstacles, max_distance=COLLISION_DISTANCE):
             continue
         yield base_conf
@@ -290,7 +290,7 @@ def sample_visibility_base_confs(robot, obj, pose, environment=[], **kwargs):
         robot_saver.restore()
         pose.assign(**kwargs)
         base_conf = GroupConf(robot, robot.base_group, positions=base_conf, **kwargs)
-        base_conf.assign()
+        base_conf.assign(**kwargs)
         # TODO: check base limits
         if pairwise_collisions(robot, obstacles, max_distance=COLLISION_DISTANCE):
             continue
@@ -314,7 +314,7 @@ def sample_prehensive_base_confs(robot, obj, pose, grasp, environment=[], **kwar
         robot_saver.restore()
         pose.assign(**kwargs)
         base_conf = GroupConf(robot, robot.base_group, positions=base_conf, **kwargs)
-        base_conf.assign()
+        base_conf.assign(**kwargs)
         # TODO: check base limits
         if pairwise_collisions(robot, obstacles, max_distance=COLLISION_DISTANCE):
             continue

@@ -15,7 +15,7 @@ from bandu_stacking.env_utils import (
     Sequence,
     Switch,
 )
-from bandu_stacking.grasping import Z_AXIS, Plane, generate_mesh_grasps
+from bandu_stacking.grasping import Z_AXIS, Plane, generate_mesh_grasps, sorted_grasps
 from bandu_stacking.pb_utils import (
     BodySaver,
     Euler,
@@ -107,34 +107,37 @@ def close_until_collision(
     return close_path[-1][0]
 
 
-def get_grasp_candidates(
-    robot,
-    obj,
-    obj_aabb,
-    obj_pose,
-    grasp_mode="mesh",
-    gripper_width=np.inf,
-    tool_pose=TOOL_POSE,
-    **kwargs,
-):
-    grasp_parts = grasp_mode.split("_")
-    grasp_mode = grasp_parts[0]
+def get_grasp_candidates(obj, gripper_width=np.inf, grasp_mode="mesh", **kwargs):
+
     if grasp_mode == "mesh":
-        return randomize(
-            generate_mesh_grasps(
-                obj, grasp_length=0.01, under=True, tool_pose=tool_pose, **kwargs
-            )
-        )  # get_top_cylinder_grasps
-    elif grasp_mode == "top":
-        return get_top_and_bottom_grasps(
+        pitches = [-np.pi, np.pi]
+        target_tolerance = np.pi / 4
+        z_threshold = 1e-2
+        antipodal_tolerance = np.pi / 16
+
+        generated_grasps = generate_mesh_grasps(
             obj,
-            obj_aabb,
-            obj_pose,
-            grasp_length=0.01,
-            under=True,
-            tool_pose=tool_pose,
+            pitches=pitches,
+            discrete_pitch=False,
+            max_width=gripper_width,
+            max_time=2,
+            target_tolerance=target_tolerance,
+            antipodal_tolerance=antipodal_tolerance,
+            z_threshold=z_threshold,
             **kwargs,
         )
+
+        if generated_grasps is not None:
+            return (
+                grasp
+                for grasp, contact1, contact2, score in sorted_grasps(
+                    generated_grasps, max_candidates=10, p_random=0.0, **kwargs
+                )
+            )
+        else:
+            return tuple([])
+    elif grasp_mode == "top":
+        return [multiply(Pose(euler=Euler(pitch=-np.pi / 2.0)), Pose(Point(z=-0.01)))]
 
 
 #######################################################
@@ -169,21 +172,17 @@ def get_grasp_gen_fn(
         gripper_width = max_width - 1e-2  # TODO: gripper widthX_AXIS
         generator = iter(
             get_grasp_candidates(
-                robot,
                 obj,
-                obj_aabb,
-                obj_pose,
                 grasp_mode=grasp_mode,
                 gripper_width=gripper_width,
                 **kwargs,
             )
         )
-        new_tool_pose = TOOL_POSE
         last_time = time.time()
         last_attempts = 0
         while True:  # TODO: filter_grasps
             grasp_pose = next(generator)  # TODO: store past grasps
-
+            print(grasp_pose)
             if (
                 (grasp_pose is None)
                 or (elapsed_time(last_time) >= max_time)
@@ -203,7 +202,6 @@ def get_grasp_gen_fn(
                     )
                 generator = iter(
                     get_grasp_candidates(
-                        robot,
                         obj,
                         grasp_mode=grasp_mode,
                         gripper_width=max_width,
@@ -276,7 +274,7 @@ def get_plan_pick_fn(robot, environment=[], **kwargs):
         # TODO: generator instead of a function
         # TODO: add the ancestors as collision obstacles
         robot_saver.restore()
-        base_conf.assign()
+        base_conf.assign(**kwargs)
         arm_path = plan_prehensile(robot, obj, pose, grasp, **kwargs)
 
         if arm_path is None:
@@ -344,7 +342,7 @@ def get_plan_place_fn(robot, **kwargs):
     def fn(obj, pose, grasp, base_conf):
         # TODO: generator instead of a function
         robot_saver.restore()
-        base_conf.assign()
+        base_conf.assign(**kwargs)
         arm_path = plan_prehensile(robot, obj, pose, grasp, **kwargs)
         if arm_path is None:
             print("[plan_place_fn] arm_path is None")
@@ -431,7 +429,7 @@ def get_plan_mobile_look_fn(
                     **kwargs,
                 ):
                     visible = False
-                    base_conf.assign()
+                    base_conf.assign(**kwargs)
                     num_head_attempts = 0
                     while not visible:
                         random_head_pos = [
@@ -568,9 +566,9 @@ def get_plan_motion_fn(
 
         if path is None:
             for conf in [q1, q2]:
-                conf.assign()
+                conf.assign(**kwargs)
                 for attachment in attachments:
-                    attachment.assign()
+                    attachment.assign(**kwargs)
             return None
 
         sequence = Sequence(
@@ -579,7 +577,7 @@ def get_plan_motion_fn(
             ],
             name="move-{}".format(ARM_GROUP),
         )
-        return (sequence,)
+        return sequence
 
     return fn
 

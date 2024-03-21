@@ -21,5 +21,6 @@ setup(
         "trimesh==4.2.0",
         "ghalton==0.6.2",
         "sbi==0.22.0",
+        "rtree==1.2.0",
     ],
 )

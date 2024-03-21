@@ -421,25 +421,21 @@ def generate_mesh_grasps(
 ):
     target_vector = get_unit_vector(Z_AXIS)
 
-    vertices, faces = mesh_from_obj(obj, **kwargs)
+    pb_mesh = mesh_from_obj(obj, **kwargs)
     # handles = draw_mesh(Mesh(vertices, faces))
 
-    mesh = trimesh.Trimesh(vertices, faces)
+    mesh = trimesh.Trimesh(pb_mesh.vertices, pb_mesh.faces)
     mesh.fix_normals()
 
-    lower, upper = AABB(*mesh.bounds)
-    surface_z = lower[2]
+    aabb = AABB(*mesh.bounds)
+    surface_z = aabb.lower[2]
     min_z = surface_z + z_threshold
     intersector = RayMeshIntersector(mesh)
 
     attempts = last_attempts = 0
 
     while attempts < max_attempts:
-        if last_attempts >= max_attempts:
-            # break
-            last_attempts = 0
-            yield None
-            continue
+
         attempts += 1
         last_attempts += 1
 
