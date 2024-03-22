@@ -4,8 +4,17 @@ A library for experimenting with bandu stacking
 ## Installation
 (Note: Performing the installation in a separate virtualenv or conda environment is
 recommended!)
-Users should just be able to run `pip install -e .` 
-Developers should run `pip install -e ".[develop]"`
+To install the package, run 
+```
+pip install -e .
+```
+
+If you're doing experiments on the robot, make sure you also compile
+```
+cd bandu_stacking/inverse_kinematics/franka_panda/
+python setup.py
+```
+
 
 ## Run an Experiment
 
