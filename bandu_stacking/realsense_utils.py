@@ -71,7 +71,7 @@ def get_profiles():
 '''
 Capture the scene from a given pose (pose_index)
 '''
-def realsense_capture(pipeline, depth_sensor, align):
+def realsense_capture(pipeline, profile, depth_sensor, align):
 
     # Streaming loop
     print(f'Depth preset value : {depth_sensor.get_option(rs.option.visual_preset)}')
@@ -89,9 +89,9 @@ def realsense_capture(pipeline, depth_sensor, align):
     depth_image = np.asanyarray(aligned_depth_frame.get_data())
     color_image = np.asanyarray(color_frame.get_data())
 
-    intrinsics = get_intrinsics(pipeline)
+    intrinsics, _ = get_intrinsics(profile)
 
-    return depth_image, color_image, intrinsics
+    return color_image, depth_image, intrinsics
 
 def get_camera_image(serial_number, camera_pose):
 
@@ -138,6 +138,6 @@ def get_camera_image(serial_number, camera_pose):
     align_to = rs.stream.color
     align = rs.align(align_to)
 
-    rgb, depth, intrinsics = realsense_capture(pipeline, depth_sensor, align)
+    rgb, depth, intrinsics = realsense_capture(pipeline, profile, depth_sensor, align)
     return CameraImage(rgb, depth/1000.0, None, camera_pose, intrinsics)
             

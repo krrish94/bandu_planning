@@ -190,15 +190,8 @@ class StackingEnvironment:
             for camera_sn in CAMERA_SNS:
                 base_T_camera = np.load(os.path.join(CALIB_DIR, f"{camera_sn}/pose.npy"))
                 camera_image = get_camera_image(camera_sn, base_T_camera)
-                camera_image = fuse_predicted_labels(
-                    self.seg_network,
-                    camera_image,
-                    use_depth=self.args.segmentation_model != "maskrcnn",
-                )
+                camera_image = fuse_predicted_labels(self.seg_network, camera_image, use_depth=True)
                 save_camera_images(camera_image)
-
-            import sys
-            sys.exit()
             
 
         elif object_set == "blocks":

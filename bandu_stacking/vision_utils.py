@@ -1,8 +1,7 @@
 import os
 import numpy as np
+import copy
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 from bandu_stacking.ucn.lib.fcn.config import cfg, cfg_from_file
 from bandu_stacking.ucn.lib.networks.SEG import seg_resnet34_8s_embedding
 from bandu_stacking.ucn.lib.fcn.test_dataset import test_sample
@@ -66,6 +65,7 @@ def cloud_from_depth(camera_matrix, depth, max_depth=10.0, top_left_origin=False
     homogeneous_coord = np.concatenate(
         [xmap.reshape(1, -1), ymap.reshape(1, -1), np.ones((1, height * width))]
     )  # 3 x (hw)
+
     rays = np.linalg.inv(camera_matrix).dot(homogeneous_coord)
     point_cloud = depth.reshape(1, height * width) * rays
     point_cloud = point_cloud.transpose(1, 0).reshape(height, width, 3)
@@ -77,46 +77,47 @@ def cloud_from_depth(camera_matrix, depth, max_depth=10.0, top_left_origin=False
 
 def fuse_predicted_labels(
     seg_network,
-    camera_image,
+    camera_image:CameraImage,
     use_depth=False,
     num_segs=1,
     **kwargs
 ):
-    rgb, depth, bullet_seg, _, camera_matrix = camera_image
 
     point_cloud = None
     if use_depth:
-        point_cloud = cloud_from_depth(camera_matrix, depth)
+        point_cloud = cloud_from_depth(camera_image.camera_matrix, camera_image.depthPixels)
 
     predicted_seg = seg_network.get_seg(
-        rgb[:, :, :3],
+        camera_image.rgbPixels[:, :, :3],
         point_cloud=point_cloud,
-        depth_image=depth,
+        depth_image=camera_image.depthPixels,
         return_int=False,
         num_segs=num_segs,
         **kwargs
     )
-    return CameraImage(rgb, depth, predicted_seg, *camera_image[3:])
+    new_camera_image = copy.deepcopy(camera_image)
+    new_camera_image.segmentationMaskBuffer = predicted_seg
+    return new_camera_image
 
 
 def save_camera_images(
-    camera_image, directory="./logs", prefix="", predicted=True, **kwargs
+    camera_image:CameraImage, directory="./logs", prefix="", predicted=True, **kwargs
 ):
     # safe_remove(directory)
     ensure_dir(directory)
-    rgb_image, depth_image, seg_image = camera_image[:3]
     # depth_image = simulate_depth(depth_image)
     save_image(
-        os.path.join(directory, "{}rgb.png".format(prefix)), rgb_image
+        os.path.join(directory, "{}rgb.png".format(prefix)), camera_image.rgbPixels
     )  # [0, 255]
 
     save_image(
-        os.path.join(directory, "{}depth.png".format(prefix)), depth_image
+        os.path.join(directory, "{}depth.png".format(prefix)), camera_image.depthPixels
     )  # [0, 1]
-    if seg_image is None:
+    
+    if camera_image.segmentationMaskBuffer is None:
         return None
     
-    segmented_image = image_from_labeled(seg_image, **kwargs)
+    segmented_image = image_from_labeled(camera_image.segmentationMaskBuffer, **kwargs)
 
     save_image(
         os.path.join(directory, "{}segmented.png".format(prefix)), segmented_image
@@ -208,9 +209,9 @@ class CategoryAgnosticSeg(object):
 
 
 class UCN(CategoryAgnosticSeg):
-    def __init__(self, base_path, **kwargs):
+    def __init__(self, base_path, device="cuda", **kwargs):
         super().__init__()
-
+        self.device = device
         self.base_path = base_path
 
         self.config_path = os.path.join(
@@ -218,7 +219,7 @@ class UCN(CategoryAgnosticSeg):
         )
 
         cfg_from_file(self.config_path)
-        cfg.device = "cuda"
+        cfg.device = self.device
         cfg.instance_id = 0
         num_classes = 2
         cfg.MODE = "TEST"
