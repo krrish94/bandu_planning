@@ -85,16 +85,18 @@ def get_pick_place_plan(abstract_action, env):
     target_pose = client.getBasePositionAndOrientation(abstract_action.target_block)
     placement_pose = get_absolute_pose(target_pose, abstract_action)
 
-    motion_planner = get_plan_motion_fn(robot, environment=env.block_ids, client=client)
+    obstacles = env.block_ids + [env.table]
+
+    motion_planner = get_plan_motion_fn(robot, environment=obstacles, client=client)
     pick_planner = get_plan_pick_fn(
-        robot, max_attempts=MAX_PICK_ATTEMPTS, client=client
+        robot, environment=obstacles, max_attempts=MAX_PICK_ATTEMPTS, client=client
     )
     place_planner = get_plan_place_fn(
-        robot, max_attempts=MAX_PLACE_ATTEMPTS, client=client
+        robot, environment=obstacles, max_attempts=MAX_PLACE_ATTEMPTS, client=client
     )
 
     grasp_finder = get_grasp_gen_fn(
-        robot, env.block_ids, grasp_mode="mesh", client=client
+        robot, environment=obstacles, grasp_mode="mesh", client=client
     )
 
     init_confs = get_current_confs(robot, client=client)
@@ -480,7 +482,7 @@ class SkeletonPlanner(Policy):
             else:
 
                 # Sample continuous parameters, test tower height, fail if height not expected
-                for ai, action in enumerate(plan_skeleton):
+                for action in plan_skeleton:
                     self.env.execute(action)
                     new_state = self.env.state_from_sim()
                     bid = initial_state.block_ids.index(action.grasp_block)

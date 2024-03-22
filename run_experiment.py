@@ -23,9 +23,9 @@ def create_args():
     parser.add_argument("--num-blocks", default=3, type=int)
     parser.add_argument("--sim-freq", default=0.01, type=float)
     parser.add_argument(
-        "--use-robot",
+        "--disable-robot",
         action="store_true",
-        help="Find plans with IK, grasp, and collision constraints",
+        help="Do not load in the robot or do any constraint satisfaction planning",
     )
     parser.add_argument(
         "--real-execute", action="store_true", help="Execute on the real robot"
@@ -34,7 +34,7 @@ def create_args():
         "--real-camera", action="store_true", help="Use real camera data"
     )
     parser.add_argument(
-        "--vis", action="store_false", help="View the pybullet gui when planning"
+        "--disable-gui", action="store_true", help="View the pybullet gui when planning"
     )
     parser.add_argument("--object-set", default="blocks", choices=object_sets)
     parser.add_argument(
@@ -56,7 +56,10 @@ def main():
         raise NotImplementedError
 
     env = StackingEnvironment(
-        object_set=args.object_set, num_blocks=args.num_blocks, gui=args.vis
+        object_set=args.object_set,
+        num_blocks=args.num_blocks,
+        disable_gui=args.disable_gui,
+        disable_robot=args.disable_robot,
     )
 
     policy = algorithms[args.algorithm](env)

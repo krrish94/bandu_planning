@@ -117,34 +117,37 @@ def add_table(
     return table, workspace
 
 
-def setup_robot_pybullet():
-    client = bc.BulletClient(connection_mode=p.GUI)
-    robot_body = load_pybullet(PANDA_PATH, fixed_base=True, client=client)
-    return robot_body, client
-
-
 class StackingEnvironment:
     def __init__(
         self,
         object_set="blocks",
         num_blocks=5,
-        gui=False,
+        disable_gui=True,
+        disable_robot=False,
         real_camera=False,
         real_execute=False,
     ):
+
         self.num_blocks = num_blocks
         self.object_set = object_set
+        self.disable_robot = disable_robot
+        self.disable_gui = disable_gui
 
-        robot_body, self.client = setup_robot_pybullet()
+        if not self.disable_gui:
+            self.client = bc.BulletClient(connection_mode=p.GUI)
+        else:
+            self.client = bc.BulletClient(connection_mode=p.DIRECT)
 
         self.client.setGravity(0, 0, -9.8)
 
-        self.robot = PandaRobot(
-            robot_body,
-            real_execute=real_execute,
-            real_camera=real_camera,
-            client=self.client,
-        )
+        if not self.disable_robot:
+            robot_body = load_pybullet(PANDA_PATH, fixed_base=True, client=self.client)
+            self.robot = PandaRobot(
+                robot_body,
+                real_execute=real_execute,
+                real_camera=real_camera,
+                client=self.client,
+            )
 
         self.client.configureDebugVisualizer(p.COV_ENABLE_GUI, 0)
         self.client.configureDebugVisualizer(p.COV_ENABLE_SHADOWS, 0)

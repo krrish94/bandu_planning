@@ -145,7 +145,7 @@ def get_grasp_candidates(obj, gripper_width=np.inf, grasp_mode="mesh", **kwargs)
 
 def get_grasp_gen_fn(
     robot,
-    other_obstacles,
+    environment=[],
     grasp_mode="mesh",
     gripper_collisions=True,
     closed_fraction=5e-2,
@@ -234,7 +234,7 @@ def get_grasp_gen_fn(
             if enable_collisions:
                 obstacles.append(obj)
 
-            obstacles.extend(other_obstacles)
+            obstacles.extend(environment)
             if pairwise_collisions(gripper, obstacles, **kwargs):
                 continue
 
