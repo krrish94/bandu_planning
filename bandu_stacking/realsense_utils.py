@@ -6,6 +6,14 @@ from types import SimpleNamespace
 import numpy as np
 from bandu_stacking.pb_utils import CameraImage
 
+CALIB_DIR = os.path.join(os.path.dirname(__file__), "../calibration/current_calibration/calib")
+CAMERA_SNS = [
+    "103422071983",
+    "027322071284",
+    "050522073498",
+    "102422072672",
+]
+
 def rs_intrinsics_to_opencv_intrinsics(intr):
     D = np.array(intr.coeffs)
     K = np.array([[intr.fx, 0, intr.ppx],
@@ -85,10 +93,9 @@ def realsense_capture(pipeline, depth_sensor, align):
 
     return depth_image, color_image, intrinsics
 
-def get_camera_image(output_folder, serial_number, camera_pose):
+def get_camera_image(serial_number, camera_pose):
 
     rs_args = SimpleNamespace()
-    rs_args.output_folder = output_folder
     rs_args.realsense_preset = 1
     rs_args.clipping_distance = 3
     rs_args.frames_to_capture = 1
@@ -97,7 +104,6 @@ def get_camera_image(output_folder, serial_number, camera_pose):
     rs_args.color_profile = 14  #42
     rs_args.depth_profile = 5
 
-    os.makedirs(output_folder, exist_ok=True)
 
     # Create a pipeline -- use Open3D's implementation
     pipeline = rs.pipeline()
@@ -132,6 +138,6 @@ def get_camera_image(output_folder, serial_number, camera_pose):
     align_to = rs.stream.color
     align = rs.align(align_to)
 
-    rgb, depth, intrinsics = realsense_capture(rs_args, pipeline, depth_sensor, align, serial_number, frames_to_skip=10)
+    rgb, depth, intrinsics = realsense_capture(pipeline, depth_sensor, align)
     return CameraImage(rgb, depth/1000.0, None, camera_pose, intrinsics)
             
