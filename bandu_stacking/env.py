@@ -136,7 +136,7 @@ class StackingEnvironment:
         self.object_set = object_set
 
         robot_body, self.client = setup_robot_pybullet()
-        
+
         self.client.setGravity(0, 0, -9.8)
 
         self.robot = PandaRobot(

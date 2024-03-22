@@ -417,7 +417,7 @@ class Switch(Command):
             del state.attachments[self.body]
         elif self.parent is not None:
             robot, tool_link = self.parent
-            
+
             gripper_joints = robot.get_group_joints(GRIPPER_GROUP, **kwargs)
             finger_links = robot.get_finger_links(gripper_joints, **kwargs)
 

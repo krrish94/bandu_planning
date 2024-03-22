@@ -1,4 +1,5 @@
 import argparse
+import datetime
 
 import numpy as np
 import pybullet as p
@@ -39,6 +40,11 @@ def create_args():
     parser.add_argument(
         "--algorithm", default="skeleton_planner", choices=list(algorithms.keys())
     )
+    parser.add_argument(
+        "--record-video",
+        action="store_true",
+        help="Record the execution and store as an MP4",
+    )
     args = parser.parse_args()
     return args
 
@@ -62,6 +68,16 @@ def main():
     )
 
     rewards = []
+
+    if args.record_video:
+        # Get the current date and time
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
+        # Create a video recorder object
+        video_recorder = env.client.startStateLogging(
+            p.STATE_LOGGING_VIDEO_MP4, f"generated_videos/{timestamp}.mp4"
+        )
+
     for _ in range(args.num_exps):
         s = env.reset()
         wait_if_gui(client=env.client)
@@ -85,6 +101,8 @@ def main():
     print("Reward Mean: " + str(np.mean(rewards)))
     print("Reward Std: " + str(np.std(rewards)))
     print("====================")
+
+    env.client.stopStateLogging(video_recorder)
 
 
 if __name__ == "__main__":

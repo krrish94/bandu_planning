@@ -336,7 +336,7 @@ def get_plan_pick_fn(robot, environment=[], **kwargs):
 #######################################################
 
 
-def get_plan_place_fn(robot, environment = [], **kwargs):
+def get_plan_place_fn(robot, environment=[], **kwargs):
     robot_saver = BodySaver(robot, **kwargs)
     environment = environment
 
@@ -344,7 +344,9 @@ def get_plan_place_fn(robot, environment = [], **kwargs):
         # TODO: generator instead of a function
         robot_saver.restore()
         base_conf.assign(**kwargs)
-        arm_path = plan_prehensile(robot, obj, pose, grasp, environment=environment, **kwargs)
+        arm_path = plan_prehensile(
+            robot, obj, pose, grasp, environment=environment, **kwargs
+        )
         if arm_path is None:
             print("[plan_place_fn] arm_path is None")
             return None
