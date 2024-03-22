@@ -1,20 +1,14 @@
-import sys
-
-sys.path.extend(["pybullet_planning"])
-
 import argparse
 
 import numpy as np
 import pybullet as p
-from pybullet_tools.utils import wait_if_gui
 
 from bandu_stacking.env import StackingEnvironment
+from bandu_stacking.pb_utils import wait_if_gui
 from bandu_stacking.policies.random_policy import RandomPolicy
+from bandu_stacking.policies.skeleton_planner import SkeletonPlanner
 
-# from bandu_stacking.policies.skeleton_planner import SkeletonPlanner
-from bandu_stacking.policies.skeleton_planner_improved import SkeletonPlannerImproved
-
-algorithms = {"random": RandomPolicy, "skeleton_planner": SkeletonPlannerImproved}
+algorithms = {"random": RandomPolicy, "skeleton_planner": SkeletonPlanner}
 
 object_sets = ["blocks", "bandu", "random"]
 
@@ -32,11 +26,19 @@ def create_args():
         action="store_true",
         help="Find plans with IK, grasp, and collision constraints",
     )
-    parser.add_argument("--real-execute", action="store_true", help="Execute on the real robot")
-    parser.add_argument("--real-camera", action="store_true", help="Use real camera data")
-    parser.add_argument("--vis", action="store_false", help="View the pybullet gui when planning")
+    parser.add_argument(
+        "--real-execute", action="store_true", help="Execute on the real robot"
+    )
+    parser.add_argument(
+        "--real-camera", action="store_true", help="Use real camera data"
+    )
+    parser.add_argument(
+        "--vis", action="store_false", help="View the pybullet gui when planning"
+    )
     parser.add_argument("--object-set", default="blocks", choices=object_sets)
-    parser.add_argument("--algorithm", default="skeleton_planner", choices=list(algorithms.keys()))
+    parser.add_argument(
+        "--algorithm", default="skeleton_planner", choices=list(algorithms.keys())
+    )
     args = parser.parse_args()
     return args
 
@@ -47,27 +49,29 @@ def main():
     if args.real_execute or args.real_camera:
         raise NotImplementedError
 
-    env = StackingEnvironment(object_set=args.object_set, num_blocks=args.num_blocks, gui=args.vis)
+    env = StackingEnvironment(
+        object_set=args.object_set, num_blocks=args.num_blocks, gui=args.vis
+    )
 
     policy = algorithms[args.algorithm](env)
     env.client.resetDebugVisualizerCamera(
         cameraDistance=1.5,
         cameraYaw=90,
         cameraPitch=-15,
-        # cameraTargetPosition=[-0.5, 0, 0.3],
         cameraTargetPosition=[-0.5, 0, 0],
     )
-    wait_if_gui(client=env.client)
 
     rewards = []
     for _ in range(args.num_exps):
         s = env.reset()
+        wait_if_gui(client=env.client)
+
         for _ in range(100):
             env.client.stepSimulation()
         for _ in range(args.max_steps):
-            env.client.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
+            # env.client.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
             a = policy.get_action(s)
-            env.client.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
+            # env.client.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
 
             if a is None:
                 break

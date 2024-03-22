@@ -1,20 +1,16 @@
 from __future__ import print_function
 
-import os
 import random
-import time
 from collections import namedtuple
 from heapq import heapify, heappop, heappush
 from itertools import islice
 
 import numpy as np
-import pybullet as p
-import pybullet_utils.bullet_client as bc
+import trimesh
+from trimesh.ray.ray_triangle import RayMeshIntersector
 
-from pybullet_planning.pybullet_tools.utils import (
+from bandu_stacking.pb_utils import (
     AABB,
-    INF,
-    PI,
     RED,
     UNKNOWN_FILE,
     Euler,
@@ -24,13 +20,8 @@ from pybullet_planning.pybullet_tools.utils import (
     PoseSaver,
     add_line,
     angle_between,
-    apply_affine,
     convex_combination,
-    draw_point,
-    draw_pose,
-    elapsed_time,
     euler_from_quat,
-    flatten,
     get_aabb,
     get_aabb_center,
     get_aabb_vertices,
@@ -39,7 +30,6 @@ from pybullet_planning.pybullet_tools.utils import (
     get_data_scale,
     get_distance,
     get_length,
-    get_model_info,
     get_pose,
     get_time_step,
     get_unit_vector,
@@ -57,9 +47,12 @@ from pybullet_planning.pybullet_tools.utils import (
     set_pose,
     single_collision,
     tform_point,
+    tform_points,
     unit_pose,
-    wait_if_gui,
 )
+
+X_AXIS = np.array([1, 0, 0])  # TODO: make immutable
+Z_AXIS = np.array([0, 0, 1])
 
 Plane = namedtuple("Plane", ["normal", "origin"])
 
@@ -99,8 +92,15 @@ def get_plane_quat(normal):
     return quat2
 
 
-X_AXIS = np.array([1, 0, 0])  # TODO: make immutable
-Z_AXIS = np.array([0, 0, 1])
+PREGRASP_DISTANCE = 0.05  # 0.05 | 0.07
+POSTGRASP_DISTANCE = 0.005  # 0.05 | 0.07
+
+# FINGER_LENGTH = PR2_FINGER_DIMENSIONS[1] / 2.
+FINGER_LENGTH = 0.0  # 0. | 0.01 | 0.015 | 0.02
+
+ScoredGrasp = namedtuple("ScoredGrasp", ["pose", "contact1", "contact2", "score"])
+
+##################################################
 
 
 def sample_sphere_surface(d, uniform=True):
@@ -113,34 +113,26 @@ def sample_sphere_surface(d, uniform=True):
             return v / r
 
 
-PREGRASP_DISTANCE = 0.07  # 0.05 | 0.07
-FINGER_LENGTH = 0.0
-
-ScoredGrasp = namedtuple("ScoredGrasp", ["pose", "contact1", "contact2", "score"])
-
-##################################################
-
-
 def control_until_contact(
-    controller, body, contact_links=[], time_after_contact=INF, all_contacts=True
+    controller, body, contact_links=[], time_after_contact=np.inf, all_contacts=True
 ):
     # TODO: unify with close_gripper
     # TODO: list different grasping control strategies
     agg = all if all_contacts else any
-    if (time_after_contact is INF) or not contact_links:
+    if (time_after_contact is np.inf) or not contact_links:
         for output in controller:
             yield output
         return
     dt = get_time_step()
-    countdown = INF
+    countdown = np.inf
     for output in controller:  # TODO: force control for grasping
         if countdown <= 0.0:
             break
 
-        if (countdown == INF) and agg(
+        if (countdown == np.inf) and agg(
             single_collision(body, link=link) for link in contact_links
         ):  # any | all
-            # (time_after_contact != INF) and contact_links
+            # (time_after_contact != np.inf) and contact_links
             countdown = time_after_contact
             print(
                 "Contact! Simulating for an additional {:.3f} sec".format(
@@ -174,6 +166,21 @@ def get_pregrasp(
     )
 
 
+def get_postgrasp(
+    grasp_tool,
+    gripper_from_tool=unit_pose(),
+    tool_distance=-POSTGRASP_DISTANCE,
+    object_distance=-POSTGRASP_DISTANCE,
+):
+    # TODO: rename to approach, standoff, guarded, ...
+    return multiply(
+        gripper_from_tool,
+        Pose(Point(x=tool_distance)),
+        grasp_tool,
+        Pose(Point(z=-object_distance)),
+    )
+
+
 ##################################################
 
 
@@ -186,7 +193,6 @@ def filter_grasps(
     draw=False,
     **kwargs,
 ):
-    # TODO: move to experiment.py
     obj_pose = get_pose(obj)
     for grasp_tool in grasp_generator:
         if grasp_tool is None:
@@ -194,36 +200,14 @@ def filter_grasps(
         grasp_pose = multiply(
             obj_pose, invert(get_grasp(grasp_tool, gripper_from_tool))
         )
-        # pregrasp_pose = multiply(obj_pose, invert(get_pregrasp(grasp_tool, gripper_from_tool, **kwargs)))
         with PoseSaver(gripper):
             set_pose(gripper, grasp_pose)  # grasp_pose | pregrasp_pose
             if any(pairwise_collision(gripper, obst) for obst in [obj] + obstacles):
                 continue
-            if draw:
-                # print([pairwise_collision(gripper, obst) for obst in [obj] + obstacles])
-                handles = draw_pose(grasp_pose)
-                wait_if_gui()
-                remove_handles(handles)
-                # continue
-            # TODO: check the ground plane (bounding box of the gripper)
-            # TODO: check the pregrasp pose
-            # conf = close_until_collision(gripper, gripper_joints, bodies=[obj],
-            #                              open_conf=open_conf, closed_conf=closed_conf)
             yield grasp_tool
 
 
 ##################################################
-
-
-def get_mesh_path(obj):
-    info = get_model_info(obj)
-    if info is None:
-        [data] = get_visual_data(obj)
-        path = get_data_filename(data)
-    else:
-        path = info.path
-
-    return path
 
 
 def mesh_from_obj(obj, use_concave=True, client=None, **kwargs):
@@ -231,7 +215,8 @@ def mesh_from_obj(obj, use_concave=True, client=None, **kwargs):
     [data] = get_visual_data(obj, -1, client=client)
     filename = get_data_filename(data)
     if use_concave:
-        filename = filename.replace("vhacd_", "")
+        filename = filename.replace("textured", "textured_vhacd")
+
     scale = get_data_scale(data)
     if filename == UNKNOWN_FILE:
         raise RuntimeError(filename)
@@ -247,7 +232,7 @@ def mesh_from_obj(obj, use_concave=True, client=None, **kwargs):
         mesh = read_obj(filename, decompose=False)
 
     vertices = [scale * np.array(vertex) for vertex in mesh.vertices]
-    vertices = apply_affine(get_data_pose(data), vertices)
+    vertices = tform_points(get_data_pose(data), vertices)
     return Mesh(vertices, mesh.faces)
 
 
@@ -261,7 +246,7 @@ def sample_grasp(
     point2,
     normal1,
     normal2,
-    pitches=[-PI, PI],
+    pitches=[-np.pi, np.pi],
     discrete_pitch=False,
     finger_length=FINGER_LENGTH,
     draw=False,
@@ -278,53 +263,22 @@ def sample_grasp(
         else:
             pitch_range = [pitches[0], pitches[-1]]
             pitch = random.uniform(*pitch_range)
-        roll = random.choice([0, PI])
+        roll = random.choice([0, np.pi])
 
         grasp_quat = multiply_quats(
             quat,
-            quat_from_euler(Euler(roll=PI / 2)),
+            quat_from_euler(Euler(roll=np.pi / 2)),
             quat_from_euler(
-                Euler(pitch=PI + pitch)
+                Euler(pitch=np.pi + pitch)
             ),  # TODO: local pitch or world pitch?
             quat_from_euler(Euler(roll=roll)),  # Switches fingers
         )
         grasp_pose = Pose(grasp_point, euler_from_quat(grasp_quat))
         grasp_pose = multiply(grasp_pose, Pose(Point(x=finger_length)))  # FINGER_LENGTH
 
-        handles = []
-        if draw:
-            # set_pose(gripper, multiply(grasp_pose, tool_from_root))
-            draw_length = 0.05
-            handles.extend(
-                flatten(
-                    [
-                        # draw_point(grasp_point),
-                        draw_point(point1, parent=obj),
-                        draw_point(point2, parent=obj),
-                        draw_pose(grasp_pose, length=draw_length, parent=obj),
-                        [
-                            add_line(point1, point2, parent=obj),
-                            add_line(
-                                point1,
-                                point1 + draw_length * normal1,
-                                parent=obj,
-                                color=RED,
-                            ),
-                            add_line(
-                                point2,
-                                point2 + draw_length * normal2,
-                                parent=obj,
-                                color=RED,
-                            ),
-                        ],
-                    ]
-                )
-            )
-            # wait_if_gui() # TODO: wait_if_unlocked
-            # remove_handles(handles)
         yield invert(
             grasp_pose
-        ), handles  # TODO: tool_from_grasp or grasp_from_tool convention?
+        ), []  # TODO: tool_from_grasp or grasp_from_tool convention?
 
 
 ##################################################
@@ -373,21 +327,6 @@ def score_overlap(
     verbose=False,
     **kwargs,
 ):
-    # TODO: could also do with PyBullet using batch_ray_collision
-    # TODO: use trimesh to get the polygon intersection of the object and fingers
-    # TODO: could test whether points on the circle are inside the object
-    # import trimesh
-    # intersector.contains_points
-    # intersector.intersects_any
-    # intersector.intersects_first
-    # intersector.intersects_id
-    # intersector.intersects_location
-    # intersector.intersects_id
-    # trimesh.ray.ray_triangle.ray_bounds
-    # trimesh.ray.ray_triangle.ray_triangle_candidates
-    # trimesh.ray.ray_triangle.ray_triangle_id
-
-    start_time = time.time()
     handles = []
     if draw:
         handles.append(add_line(point1, point2, color=RED))
@@ -441,7 +380,7 @@ def score_overlap(
                 difference = abs(contact_distance - distance)
                 # normal = extract_normal(mesh, face) # TODO: use the normal for lexiographic scoring
             else:
-                difference = np.nan  # INF
+                difference = np.nan  # np.inf
             differences.append(difference)
             # TODO: extract_normal(mesh, index) for the rays
         direction_differences.append(differences)
@@ -451,25 +390,19 @@ def score_overlap(
     percent = np.count_nonzero(~np.isnan(combined)) / (len(combined))
     np.nanmean(combined)
 
-    # return np.array([percent, -average])
     score = percent
-    # score = 1e3*percent + (-average) # TODO: true lexiographic sorting
-    # score = (percent, -average)
 
     if verbose:
         print(
-            "Score: {} | Percent1: {} | Average1: {:.3f} | Percent2: {} | Average2: {:.3f} | Time: {:.3f}".format(
+            "Score: {} | Percent1: {} | Average1: {:.3f} | Percent2: {} | Average2: {:.3f}".format(
                 score,
                 np.mean(~np.isnan(differences1)),
                 np.nanmean(differences1),  # nanmedian
                 np.mean(~np.isnan(differences2)),
                 np.nanmean(differences2),
-                elapsed_time(start_time),
             )
         )  # 0.032 sec
-    if draw:
-        wait_if_gui()
-        remove_handles(handles, **kwargs)
+
     return score
 
 
@@ -478,56 +411,47 @@ def score_overlap(
 
 def generate_mesh_grasps(
     obj,
-    max_width=INF,
-    target_tolerance=PI / 4,
-    antipodal_tolerance=PI / 6,
-    z_threshold=-INF,
-    max_time=INF,
-    max_attempts=INF,
+    max_width=np.inf,
+    target_tolerance=np.pi / 4,
+    antipodal_tolerance=0,
+    z_threshold=-np.inf,
+    max_attempts=np.inf,
     score_type="combined",
-    verbose=False,
     **kwargs,
 ):
-    # TODO: sample xy lines
-    # TODO: compute pairs of faces that could work
-    # TODO: some amount of basic collision checking here
     target_vector = get_unit_vector(Z_AXIS)
 
-    import trimesh
-
-    vertices, faces = mesh_from_obj(obj, **kwargs)
+    pb_mesh = mesh_from_obj(obj, **kwargs)
     # handles = draw_mesh(Mesh(vertices, faces))
-    mesh = trimesh.Trimesh(vertices, faces)
+
+    mesh = trimesh.Trimesh(pb_mesh.vertices, pb_mesh.faces)
     mesh.fix_normals()
 
-    lower, upper = AABB(*mesh.bounds)
-    surface_z = lower[2]
+    aabb = AABB(*mesh.bounds)
+    surface_z = aabb.lower[2]
     min_z = surface_z + z_threshold
-
-    from trimesh.ray.ray_triangle import RayMeshIntersector
-
     intersector = RayMeshIntersector(mesh)
 
-    last_time = time.time()
     attempts = last_attempts = 0
+
     while attempts < max_attempts:
-        if (elapsed_time(last_time) >= max_time) or (last_attempts >= max_attempts):
-            # break
-            last_time = time.time()
-            last_attempts = 0
-            yield None
-            continue
+
         attempts += 1
         last_attempts += 1
 
-        [point1, point2], [index1, index2] = mesh.sample(2, return_index=True)
+        [point1, point2], [index1, index2] = trimesh.sample.sample_surface(
+            mesh=mesh,
+            count=2,
+            face_weight=None,  # seed=random.randint(1, 1e8)
+        )
+
         if any(point[2] < min_z for point in [point1, point2]):
             continue
         distance = get_distance(point1, point2)
         if (distance > max_width) or (distance < 1e-3):
             continue
         direction2 = point2 - point1
-        if abs(angle_between(target_vector, direction2) - PI / 2) > target_tolerance:
+        if abs(angle_between(target_vector, direction2) - np.pi / 2) > target_tolerance:
             continue
 
         normal1 = extract_normal(mesh, index1)
@@ -548,45 +472,16 @@ def generate_mesh_grasps(
         tool_from_grasp, handles = next(
             sample_grasp(obj, point1, point2, normal1, normal2, **kwargs)
         )
-        tool_axis = tform_point(invert(tool_from_grasp), X_AXIS)
-        if tool_axis[2] > 0:  # TODO: angle from plane
-            # handles.append(add_line(tform_point(invert(tool_from_grasp), unit_point()), tool_axis, parent=obj))
-            # wait_if_gui()
-            # remove_handles(handles)
-            continue
 
-        if score_type is None:
-            score = 0.0
-        elif score_type == "torque":
-            score = score_torque(mesh, tool_from_grasp, **kwargs)
-        elif score_type == "antipodal":
-            score = score_antipodal(error1, error2, **kwargs)
-        elif score_type == "width":
-            score = score_width(point1, point2, **kwargs)
-        elif score_type == "overlap":
-            score = score_overlap(intersector, point1, point2, **kwargs)
-        elif score_type == "combined":
-            score = combine_scores(
-                score_overlap(intersector, point1, point2, **kwargs),
-                score_torque(mesh, tool_from_grasp, **kwargs),
-                # score_antipodal(error1, error2),
-            )
-        else:
-            raise NotImplementedError(score_type)
+        assert score_type == "combined"
 
-        if verbose:
-            print(
-                "Runtime: {:.3f} sec | Attempts: {} | Score: {}".format(
-                    elapsed_time(last_time), last_attempts, score
-                )
-            )
-        yield ScoredGrasp(
-            tool_from_grasp, point1, point2, score
-        )  # Could just return orientation and contact points
+        score = combine_scores(
+            score_overlap(intersector, point1, point2, **kwargs),
+            score_torque(mesh, tool_from_grasp, **kwargs),
+        )
+        yield ScoredGrasp(tool_from_grasp, point1, point2, score)
 
-        last_time = time.time()
         last_attempts = 0
-        # wait_if_gui()
         remove_handles(handles, **kwargs)
 
 
@@ -594,14 +489,9 @@ def generate_mesh_grasps(
 
 
 def sorted_grasps(generator, max_candidates=10, p_random=0.0, **kwargs):
-    # TODO: pose distance metric and diverse planning
-    # TODO: prune grasps that are too close to each other
-    # TODO: is there an existing python method that does this?
-    # TODO: sort after checking for collisions
     candidates = []
     selected = []
     while True:
-        start_time = time.time()
         for grasp in islice(generator, max_candidates - len(candidates)):
             if grasp is None:
                 return
@@ -611,38 +501,14 @@ def sorted_grasps(generator, max_candidates=10, p_random=0.0, **kwargs):
         if not candidates:
             break
         if p_random < random.random():
-            # TODO: could also make a high score or immediately return
-            # TODO: geometric distribution for how long an element will be in the queue
-            # TODO: ordinal statistics for sampling
             score, index, grasp = candidates.pop(random.randint(0, len(candidates) - 1))
             heapify(candidates)
         else:
             score, index, grasp = heappop(candidates)
-        print(
-            "Grasp: {} | Index: {} | Candidates: {} | Score: {} | Time: {:.3f}".format(
-                len(selected),
-                index,
-                len(candidates) + 1,
-                negate_score(score),
-                elapsed_time(start_time),
-            )
-        )
+
         yield grasp
         selected.append(grasp)
 
 
-if __name__ == "__main__":
-    client = bc.BulletClient(connection_mode=p.DIRECT)
-    bounding_boxes = []
-    block_ids = []
-    bandu_model_path = "./models/bandu_models"
-    bandu_filenames = [
-        f
-        for f in os.listdir(bandu_model_path)
-        if os.path.isfile(os.path.join(bandu_model_path, f))
-    ]
-    bandu_urdfs = [f for f in bandu_filenames if f.endswith("urdf")]
-    bandu_urdf = os.path.join(bandu_model_path, random.choice(bandu_urdfs))
-    obj = client.loadURDF(bandu_urdf, globalScaling=0.002)
-    mesh_grasps = generate_mesh_grasps(obj, max_attempts=10000, client=client)
-    print(f"Grasps: {len(list(mesh_grasps))}")
+def filter_grasps(generator):
+    raise NotImplementedError()

@@ -3,11 +3,10 @@ from collections import namedtuple
 import numpy as np
 import pybullet as p
 
-from pybullet_planning.pybullet_tools.utils import (
+from bandu_stacking.pb_utils import (
     AABB,
     UNKNOWN_FILE,
     Mesh,
-    apply_affine,
     get_aabb,
     get_aabb_center,
     get_aabb_vertices,
@@ -16,9 +15,10 @@ from pybullet_planning.pybullet_tools.utils import (
     get_data_scale,
     get_visual_data,
     mesh_from_points,
+    pairwise_collision,
     read_obj,
     set_pose,
-    wait_if_gui,
+    tform_points,
 )
 
 
@@ -26,7 +26,7 @@ def extract_normal(mesh, index):
     return np.array(mesh.face_normals[index, :])
 
 
-def mesh_from_obj(obj, use_concave=True, client=None, **kwargs):
+def mesh_from_obj(obj, use_concave=True, client=None, **kwargs) -> Mesh:
     # PyBullet creates multiple collision elements (with unknown_file) when nonconvex
     [data] = get_visual_data(obj, -1, client=client)
     filename = get_data_filename(data)
@@ -47,7 +47,7 @@ def mesh_from_obj(obj, use_concave=True, client=None, **kwargs):
         mesh = read_obj(filename, decompose=False)
 
     vertices = [scale * np.array(vertex) for vertex in mesh.vertices]
-    vertices = apply_affine(get_data_pose(data), vertices)
+    vertices = tform_points(get_data_pose(data), vertices)
     return Mesh(vertices, mesh.faces)
 
 
@@ -111,40 +111,3 @@ def create_pybullet_block(
     )
 
     return block_id
-
-
-BASE_LINK = -1
-MAX_DISTANCE = 1e-3
-CollisionInfo = namedtuple(
-    "CollisionInfo",
-    """
-                           contactFlag
-                           bodyUniqueIdA
-                           bodyUniqueIdB
-                           linkIndexA
-                           linkIndexB
-                           positionOnA
-                           positionOnB
-                           contactNormalOnB
-                           contactDistance
-                           normalForce
-                           lateralFriction1
-                           lateralFrictionDir1
-                           lateralFriction2
-                           lateralFrictionDir2
-                           """.split(),
-)
-
-
-def get_closest_points(body1, body2, max_distance=MAX_DISTANCE, client=None):
-    results = client.getClosestPoints(bodyA=body1, bodyB=body2, distance=max_distance)
-
-    return [CollisionInfo(*info) for info in results]
-
-
-def body_collision(body1, body2, **kwargs):
-    return len(get_closest_points(body1, body2, **kwargs)) != 0
-
-
-def pairwise_collision(body1, body2, **kwargs):
-    return body_collision(body1, body2, **kwargs)

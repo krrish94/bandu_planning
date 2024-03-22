@@ -1,13 +1,8 @@
-import sys
-
-sys.path.extend(["pybullet_planning"])
-
 import argparse
 import random
 
 import numpy as np
 import pybullet as p
-from pybullet_tools.utils import wait_if_gui
 
 from bandu_stacking.env_no_robot import StackingEnvironment
 from bandu_stacking.policies.random_policy import RandomPolicy
@@ -81,9 +76,7 @@ def main():
         plan = policy.get_plan(s)
         policy.plan = plan
         env.client.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
-        """
-        Load fullres meshes for execution
-        """
+        """Load fullres meshes for execution."""
         env.client.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
         # Sample mass, friction, restitution randomly
         sampled_mass = np.random.uniform(0.5, 1)
