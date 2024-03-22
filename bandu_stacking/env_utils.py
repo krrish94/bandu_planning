@@ -614,32 +614,6 @@ class GroupTrajectory(Trajectory):
         return "{}t{}".format(self.group[0], id(self) % 1000)
 
 
-class Camera(object):  # TODO: extend Object?
-    def __init__(
-        self, robot, link, optical_frame, camera_matrix, max_depth=2.5, **kwargs
-    ):
-        self.robot = robot
-        self.optical_frame = optical_frame
-        self.camera_matrix = camera_matrix
-        self.max_depth = max_depth
-        self.kwargs = dict(kwargs)
-
-    def get_pose(self, **kwargs):
-        return get_link_pose(self.robot, self.optical_frame, **kwargs)
-
-    def get_image(self, segment=True, segment_links=False, **kwargs):
-        # TODO: apply maximum depth
-        # TODO: noise model
-        return get_image_at_pose(
-            self.get_pose(**kwargs),
-            self.camera_matrix,
-            tiny=False,
-            segment=segment,
-            segment_links=segment_links,
-            **kwargs,
-        )
-
-
 class RelativePose(object):
     def __init__(
         self,
@@ -716,13 +690,6 @@ class PandaRobot:
         self.components = {}
 
         self.controller = SimulatedController(self)
-
-        self.camera = Camera(
-            self,
-            link=link_from_name(self.body, CAMERA_FRAME, **kwargs),
-            optical_frame=link_from_name(self.body, CAMERA_OPTICAL_FRAME, **kwargs),
-            camera_matrix=camera_matrix,
-        )
 
         self.max_depth = 3.0
         self.min_z = 0.0
@@ -874,9 +841,6 @@ class PandaRobot:
         for component in self.components.values():
             remove_body(component, **kwargs)
         self.components = {}
-
-    def get_image(self, **kwargs):
-        return self.camera.get_image(**kwargs)
 
 
 class WorldState(State):

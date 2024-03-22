@@ -29,10 +29,10 @@ from bandu_stacking.pb_utils import (
     pairwise_collision,
     set_pose,
     wait_for_duration,
-    wait_if_gui,
+    wait_if_gui
 )
 from bandu_stacking.policies.policy import State
-from bandu_stacking.vision_utils import UCN
+from bandu_stacking.vision_utils import UCN, fuse_predicted_labels, save_camera_images
 
 TABLE_AABB = AABB(
     lower=(-1.53 / 2.0, -1.22 / 2.0, -0.03 / 2.0),
@@ -186,9 +186,21 @@ class StackingEnvironment:
         self.block_size = 0.045
         if self.real_camera:
             self.seg_network = UCN(base_path=os.path.join(os.path.dirname(__file__), "ucn"))
-            print("initted seg network")
+
+            
+            camera_image = camera.get_image()  # TODO: remove_alpha
+            for camera_sn in CAMERA_SNS:
+                camera_image = fuse_predicted_labels(
+                    self.seg_network,
+                    camera_image,
+                    use_depth=self.args.segmentation_model != "maskrcnn",
+                )
+                save_camera_images(camera_image)
+
             import sys
             sys.exit()
+            
+
         elif object_set == "blocks":
             for i in range(self.num_blocks):
                 color = self._obj_colors[i % len(self._obj_colors)]
