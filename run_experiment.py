@@ -52,7 +52,7 @@ def create_args():
 def main():
     args = create_args()
 
-    if args.real_execute or args.real_camera:
+    if args.real_execute:
         raise NotImplementedError
 
     env = StackingEnvironment(
@@ -60,6 +60,7 @@ def main():
         num_blocks=args.num_blocks,
         disable_gui=args.disable_gui,
         disable_robot=args.disable_robot,
+        real_camera=args.real_camera
     )
 
     policy = algorithms[args.algorithm](env)

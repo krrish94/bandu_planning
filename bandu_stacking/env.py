@@ -32,6 +32,7 @@ from bandu_stacking.pb_utils import (
     wait_if_gui,
 )
 from bandu_stacking.policies.policy import State
+from bandu_stacking.vision_utils import UCN
 
 TABLE_AABB = AABB(
     lower=(-1.53 / 2.0, -1.22 / 2.0, -0.03 / 2.0),
@@ -132,6 +133,7 @@ class StackingEnvironment:
         self.object_set = object_set
         self.disable_robot = disable_robot
         self.disable_gui = disable_gui
+        self.real_camera = real_camera
 
         if not self.disable_gui:
             self.client = bc.BulletClient(connection_mode=p.GUI)
@@ -182,8 +184,12 @@ class StackingEnvironment:
         self.bounding_boxes = []
 
         self.block_size = 0.045
-
-        if object_set == "blocks":
+        if self.real_camera:
+            self.seg_network = UCN(base_path=os.path.join(os.path.dirname(__file__), "ucn"))
+            print("initted seg network")
+            import sys
+            sys.exit()
+        elif object_set == "blocks":
             for i in range(self.num_blocks):
                 color = self._obj_colors[i % len(self._obj_colors)]
                 half_extents = (
