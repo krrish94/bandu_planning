@@ -1,23 +1,22 @@
 
 import os
 import pyrealsense2 as rs
-
-
-
-import os
-import os.path as osp
-import json
 from enum import IntEnum
 from types import SimpleNamespace
-import sys
-sys.path.append(osp.abspath(__file__))
-
-import cv2
 import numpy as np
+from bandu_stacking.pb_utils import CameraImage
 
-import pyrealsense2 as rs
+def rs_intrinsics_to_opencv_intrinsics(intr):
+    D = np.array(intr.coeffs)
+    K = np.array([[intr.fx, 0, intr.ppx],
+                  [0, intr.fy, intr.ppy],
+                  [0, 0, 1]])
+    return K, D
 
-# from helper.utils import make_dir
+def get_intrinsics(pipeline_profile, stream=rs.stream.color):
+    stream_profile = pipeline_profile.get_stream(stream) # Fetch stream profile for depth stream
+    intr = stream_profile.as_video_stream_profile().get_intrinsics() # Downcast to video_stream_profile and fetch intrinsics
+    return rs_intrinsics_to_opencv_intrinsics(intr)
 
 class Preset(IntEnum):
     Custom = 0
@@ -82,13 +81,11 @@ def realsense_capture(pipeline, depth_sensor, align):
     depth_image = np.asanyarray(aligned_depth_frame.get_data())
     color_image = np.asanyarray(color_frame.get_data())
 
-    intrinsics = frames.profile.as_video_stream_profile().intrinsics
+    intrinsics = get_intrinsics(pipeline)
 
-    return depth_image, cv2.cvtColor(color_image, cv2.COLOR_RGB2BGR), intrinsics
+    return depth_image, color_image, intrinsics
 
-
-    
-def capture_realsense_image_by_serial_number(output_folder, serial_number):
+def get_camera_image(output_folder, serial_number, camera_pose):
 
     rs_args = SimpleNamespace()
     rs_args.output_folder = output_folder
@@ -135,4 +132,6 @@ def capture_realsense_image_by_serial_number(output_folder, serial_number):
     align_to = rs.stream.color
     align = rs.align(align_to)
 
-    realsense_capture(rs_args, pipeline, depth_sensor, align, serial_number, frames_to_skip=10)
+    rgb, depth, intrinsics = realsense_capture(rs_args, pipeline, depth_sensor, align, serial_number, frames_to_skip=10)
+    return CameraImage(rgb, depth/1000.0, None, camera_pose, intrinsics)
+            

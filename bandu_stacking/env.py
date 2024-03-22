@@ -33,6 +33,7 @@ from bandu_stacking.pb_utils import (
 )
 from bandu_stacking.policies.policy import State
 from bandu_stacking.vision_utils import UCN, fuse_predicted_labels, save_camera_images
+from bandu_stacking.realsense_utils import get_camera_image
 
 TABLE_AABB = AABB(
     lower=(-1.53 / 2.0, -1.22 / 2.0, -0.03 / 2.0),
@@ -187,9 +188,8 @@ class StackingEnvironment:
         if self.real_camera:
             self.seg_network = UCN(base_path=os.path.join(os.path.dirname(__file__), "ucn"))
 
-            
-            camera_image = camera.get_image()  # TODO: remove_alpha
             for camera_sn in CAMERA_SNS:
+                camera_image = get_camera_image(camera_sn)
                 camera_image = fuse_predicted_labels(
                     self.seg_network,
                     camera_image,
