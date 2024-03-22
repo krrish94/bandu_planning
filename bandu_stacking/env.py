@@ -48,9 +48,9 @@ def iterate_sequence(
 ):  # None | INF
     assert sequence is not None
     for i, _ in enumerate(sequence.iterate(state, teleport=teleport, **kwargs)):
-        state.propagate()
+        state.propagate(**kwargs)
         if time_step is None:
-            wait_if_gui()
+            wait_if_gui(**kwargs)
         else:
             wait_for_duration(time_step)
     return state
@@ -369,7 +369,7 @@ class StackingEnvironment:
     def step(self, state, action, sim_freq=0):
         self.set_sim_state(state)
         self.world_state.assign()
-        iterate_sequence(self.world_state, action)
+        iterate_sequence(self.world_state, action, client=self.client)
         self.simulate_until_static(sim_freq=1e-2)
         next_state = self.state_from_sim()
         self.world_state = WorldState(client=self.client)

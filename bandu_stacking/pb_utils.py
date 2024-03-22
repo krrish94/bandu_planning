@@ -1188,7 +1188,7 @@ def spaced_colors(n, s=1, v=1):
     return [colorsys.hsv_to_rgb(h, s, v) for h in np.linspace(0, 1, n, endpoint=False)]
 
 
-def get_bodies(client=None):
+def get_bodies(client=None, **kwargs):
     client = client or DEFAULT_CLIENT
     # Note that all APIs already return body unique ids, so you typically never need to use getBodyUniqueId if you keep track of them
     return [client.getBodyUniqueId(i) for i in range(client.getNumBodies())]
@@ -2474,11 +2474,11 @@ class State(object):
     def __init__(self, attachments={}):
         self.attachments = dict(attachments)
 
-    def propagate(self):
+    def propagate(self, **kwargs):
         # Derived values
         for relative_pose in self.attachments.values():
             # TODO: topological sort
-            relative_pose.assign()
+            relative_pose.assign(**kwargs)
 
     def copy(self):  # update
         return self.__class__(attachments=self.attachments)

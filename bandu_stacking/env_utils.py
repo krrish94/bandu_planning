@@ -417,28 +417,19 @@ class Switch(Command):
             del state.attachments[self.body]
         elif self.parent is not None:
             robot, tool_link = self.parent
-            gripper_group = None
-            for group, (
-                arm_group,
-                gripper_group,
-                tool_name,
-            ) in robot.manipulators.items():
-                if link_from_name(robot, tool_name, **kwargs) == tool_link:
-                    break
-            else:
-                raise RuntimeError(tool_link)
-            gripper_joints = robot.get_group_joints(gripper_group)
-            finger_links = robot.get_finger_links(gripper_joints)
+            
+            gripper_joints = robot.get_group_joints(GRIPPER_GROUP, **kwargs)
+            finger_links = robot.get_finger_links(gripper_joints, **kwargs)
 
             movable_bodies = [body for body in get_bodies(**kwargs) if (body != robot)]
 
             # collision_bodies = [body for body in movable_bodies if any_link_pair_collision(
             #    robot, finger_links, body, max_distance=1e-2)]
 
-            gripper_width = robot.get_gripper_width(gripper_joints)
-            max_width = robot.get_max_gripper_width(
-                robot.get_group_joints(gripper_group)
-            )
+            # gripper_width = robot.get_gripper_width(gripper_joints)
+            # max_width = robot.get_max_gripper_width(
+            #     robot.get_group_joints(GRIPPER_GROUP)
+            # )
 
             max_distance = 5e-2
             collision_bodies = [
@@ -1019,18 +1010,17 @@ class Grasp(object):  # RelativePose
 
 
 class ParentBody(object):  # TODO: inherit from Shape?
-    def __init__(self, body=None, link=BASE_LINK, client=None, **kwargs):
+    def __init__(self, body=None, link=BASE_LINK, **kwargs):
         self.body = body
-        self.client = client
         self.link = link
 
     def __iter__(self):
         return iter([self.body, self.link])
 
-    def get_pose(self):
+    def get_pose(self, **kwargs):
         if self.body is None:
             return unit_pose()
-        return get_link_pose(self.body, self.link, client=self.client)
+        return get_link_pose(self.body, self.link, **kwargs)
 
     # TODO: hash & equals by extending tuple
     def __repr__(self):
