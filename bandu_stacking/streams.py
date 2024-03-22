@@ -22,14 +22,12 @@ from bandu_stacking.pb_utils import (
     Point,
     Pose,
     PoseSaver,
-    Tuple,
     elapsed_time,
     get_aabb,
     get_aabb_center,
     get_extend_fn,
     get_moving_links,
     get_pose,
-    get_top_and_bottom_grasps,
     invert,
     link_from_name,
     multiply,
@@ -38,7 +36,6 @@ from bandu_stacking.pb_utils import (
     plan_joint_motion,
     point_from_pose,
     quat_from_pose,
-    randomize,
     set_joint_positions,
     set_pose,
     stable_z_on_aabb,
@@ -46,15 +43,10 @@ from bandu_stacking.pb_utils import (
 from bandu_stacking.samplers import (
     COLLISION_DISTANCE,
     DISABLE_ALL_COLLISIONS,
-    MOVABLE_DISTANCE,
     SELF_COLLISIONS,
-    compute_gripper_path,
     plan_prehensile,
     plan_workspace_motion,
-    sample_prehensive_base_confs,
-    sample_visibility_base_confs,
     set_open_positions,
-    workspace_collision,
 )
 
 TOOL_POSE = Pose(point=Point(x=0.00), euler=Euler(pitch=np.pi / 2))
@@ -275,7 +267,7 @@ def get_plan_pick_fn(robot, environment=[], **kwargs):
         # TODO: add the ancestors as collision obstacles
         robot_saver.restore()
         base_conf.assign(**kwargs)
-        arm_path = plan_prehensile(robot, obj, pose, grasp, **kwargs)
+        arm_path = plan_prehensile(robot, obj, pose, grasp, environment=environment, **kwargs)
 
         if arm_path is None:
             return None
@@ -386,23 +378,6 @@ def get_plan_place_fn(robot, environment=[], **kwargs):
             raise NotImplementedError(SWITCH_BEFORE)
         sequence = Sequence(commands=commands, name="place-{}".format(obj))
         return (arm_conf, sequence)
-
-    return fn
-
-
-def get_plan_mobile_place_fn(robot, **kwargs):
-    robot_saver = BodySaver(robot, **kwargs)
-    place_fn = get_plan_place_fn(robot, **kwargs)
-
-    def fn(obj, pose, grasp):
-        robot_saver.restore()
-        for base_conf in sample_prehensive_base_confs(
-            robot, obj, pose, grasp, **kwargs
-        ):
-            outputs = place_fn(obj, pose, grasp, base_conf)
-            if outputs is None:
-                continue
-            yield Tuple(base_conf) + outputs
 
     return fn
 

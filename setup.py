@@ -19,9 +19,11 @@ setup(
         "black==24.3.0",
         "isort==5.13.2",
         "trimesh==4.2.0",
-        "ghalton==0.6.2",
         "sbi==0.22.0",
         "rtree==1.2.0",
-        "easydict==1.13"
+        "easydict==1.13",
+        "torchvision==0.17.1",
+        "opencv-python==4.9.0.80",
+        "pyrealsense2==2.54.2.5684"
     ],
 )

@@ -2565,32 +2565,12 @@ def convex_combination(x, y, w=0.5):
     return (1 - w) * np.array(x) + w * np.array(y)
 
 
-def halton_generator(d, seed=None):
-    import ghalton
-
-    if seed is None:
-        seed = random.randint(0, 1000)
-    # sequencer = ghalton.Halton(d)
-    sequencer = ghalton.GeneralizedHalton(d, seed)
-    # sequencer.reset()
-    while True:
-        [weights] = sequencer.get(1)
-        yield np.array(weights)
-
-
 def uniform_generator(d):
     while True:
         yield np.random.uniform(size=d)
 
-
-def unit_generator(d, use_halton=False, **kwargs):
-    if use_halton:
-        try:
-            import ghalton
-        except ImportError:
-            print("ghalton is not installed (https://pypi.org/project/ghalton/)")
-            use_halton = False
-    return halton_generator(d) if use_halton else uniform_generator(d)
+def unit_generator(d, **kwargs):
+    return uniform_generator(d)
 
 
 def interval_generator(lower, upper, **kwargs):
@@ -3091,8 +3071,8 @@ def get_collision_fn(
                 not use_aabb
                 or aabb_overlap(get_moving_aabb(body), get_moving_aabb(body))
             ) and pairwise_link_collision(body, link1, body, link2, **kwargs):
-                if verbose:
-                    print(body, link1, body, link2)
+                print("Link on link collision")
+                print(body, link1, body, link2)
                 return True
 
         for body1, body2 in itertools.product(moving_bodies, obstacles):
@@ -3100,6 +3080,8 @@ def get_collision_fn(
                 not use_aabb
                 or aabb_overlap(get_moving_aabb(body1), get_obstacle_aabb(body2))
             ) and pairwise_collision(body1, body2, **kwargs):
+                print("Body on body collision")
+                print(body1, body2)
                 return True
         return False
 

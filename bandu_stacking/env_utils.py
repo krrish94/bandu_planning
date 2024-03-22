@@ -207,10 +207,10 @@ def create_ycb(
 
 
 TABLE_AABB = AABB(
-    lower=(-1.53 / 2.0, -1.22 / 2.0, -0.03 / 2.0),
-    upper=(1.53 / 2.0, 1.22 / 2.0, 0.03 / 2.0),
+    lower=(-0.70 / 2.0, -1.0 / 2.0, -0.03 / 2.0),
+    upper=(0.70 / 2.0, 1.0 / 2.0, 0.03 / 2.0),
 )
-TABLE_POSE = Pose((0.1, 0, -TABLE_AABB.upper[2]))
+TABLE_POSE = Pose((0.45, 0, -TABLE_AABB.upper[2]))
 
 
 def get_data_path():
@@ -261,7 +261,7 @@ def create_default_env(
 
 
 def add_table(
-    table_width: float = 1.50,
+    table_width: float = 0.75,
     table_length: float = 1.22,
     table_thickness: float = 0.03,
     table_pose: Pose = TABLE_POSE,

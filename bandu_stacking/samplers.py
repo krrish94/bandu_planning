@@ -255,71 +255,13 @@ def plan_prehensile(robot, obj, pose, grasp, environment=[], **kwargs):
     pose.assign(**kwargs)
     gripper_path = compute_gripper_path(pose, grasp)  # grasp -> pregrasp
     gripper_waypoints = gripper_path[:1] + gripper_path[-1:]
-    if workspace_collision(robot, gripper_path, grasp=None, obstacles=[], **kwargs):
+    if workspace_collision(robot, gripper_path, grasp=None, obstacles=obstacles, **kwargs):
         return None
     create_grasp_attachment(robot, grasp, **kwargs)
     arm_path = plan_workspace_motion(
-        robot, gripper_waypoints, attachment=None, obstacles=[], **kwargs
+        robot, gripper_waypoints, attachment=None, obstacles=obstacles, **kwargs
     )
     return arm_path
-
-
-def sample_attachment_base_confs(robot, obj, pose, environment=[], **kwargs):
-    robot_saver = BodySaver(robot, **kwargs)  # TODO: reset the rest conf
-    obstacles = environment  # + [obj]
-
-    base_generator = robot.base_sample_gen(pose)
-
-    for base_conf in base_generator:
-        robot_saver.restore()
-        pose.assign(**kwargs)
-        base_conf = GroupConf(robot, robot.base_group, positions=base_conf, **kwargs)
-        base_conf.assign(**kwargs)
-        if pairwise_collisions(robot, obstacles, max_distance=COLLISION_DISTANCE):
-            continue
-        yield base_conf
-
-
-def sample_visibility_base_confs(robot, obj, pose, environment=[], **kwargs):
-    robot_saver = BodySaver(robot, **kwargs)  # TODO: reset the rest conf
-    obstacles = environment
-
-    base_generator = robot.base_sample_gen(pose)
-    # base_generator = learned_pose_generator(robot, grasp_pose, arm=side, grasp_type='top') # TODO: top & side
-    for base_conf in base_generator:
-        robot_saver.restore()
-        pose.assign(**kwargs)
-        base_conf = GroupConf(robot, robot.base_group, positions=base_conf, **kwargs)
-        base_conf.assign(**kwargs)
-        # TODO: check base limits
-        if pairwise_collisions(robot, obstacles, max_distance=COLLISION_DISTANCE):
-            continue
-        yield base_conf
-
-
-def sample_prehensive_base_confs(robot, obj, pose, grasp, environment=[], **kwargs):
-    robot_saver = BodySaver(robot, **kwargs)  # TODO: reset the rest conf
-    obstacles = environment  # + [obj]
-
-    gripper_path = compute_gripper_path(pose, grasp)
-    if workspace_collision(
-        robot, gripper_path, grasp=None, obstacles=obstacles, **kwargs
-    ):
-        return
-
-    base_generator = uniform_pose_generator(
-        robot, gripper_path[0], reachable_range=(0.5, 1.0)
-    )
-    for base_conf in base_generator:
-        robot_saver.restore()
-        pose.assign(**kwargs)
-        base_conf = GroupConf(robot, robot.base_group, positions=base_conf, **kwargs)
-        base_conf.assign(**kwargs)
-        # TODO: check base limits
-        if pairwise_collisions(robot, obstacles, max_distance=COLLISION_DISTANCE):
-            continue
-        yield base_conf
-
 
 def set_closed_positions(robot, **kwargs):
     closed_conf, _ = robot.get_group_limits(GRIPPER_GROUP, **kwargs)
