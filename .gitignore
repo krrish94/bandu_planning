@@ -138,3 +138,5 @@ robots/panda/panda_dataset
 out_*
 overlay*
 dashboard*
+
+generated_videos
