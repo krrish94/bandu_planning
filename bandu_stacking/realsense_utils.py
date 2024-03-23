@@ -1,9 +1,10 @@
+from __future__ import annotations
+
 import os
 from enum import IntEnum
 from types import SimpleNamespace
 
 import numpy as np
-import pyrealsense2 as rs
 
 from bandu_stacking.pb_utils import CameraImage
 
@@ -24,7 +25,7 @@ def rs_intrinsics_to_opencv_intrinsics(intr):
     return K, D
 
 
-def get_intrinsics(pipeline_profile, stream=rs.stream.color):
+def get_intrinsics(pipeline_profile, stream):
     stream_profile = pipeline_profile.get_stream(
         stream
     )  # Fetch stream profile for depth stream
@@ -87,30 +88,8 @@ Capture the scene from a given pose (pose_index)
 """
 
 
-def realsense_capture(pipeline, profile, depth_sensor, align):
-
-    # Streaming loop
-    print(f"Depth preset value : {depth_sensor.get_option(rs.option.visual_preset)}")
-
-    # Get frameset of color and depth
-    frames = pipeline.wait_for_frames(timeout_ms=10000)
-
-    # Align the depth frame to color frame
-    aligned_frames = align.process(frames)
-
-    # Get aligned frames
-    aligned_depth_frame = aligned_frames.get_depth_frame()
-    color_frame = aligned_frames.get_color_frame()
-
-    depth_image = np.asanyarray(aligned_depth_frame.get_data())
-    color_image = np.asanyarray(color_frame.get_data())
-
-    intrinsics, _ = get_intrinsics(profile)
-
-    return color_image, depth_image, intrinsics
-
-
 def get_camera_image(serial_number, camera_pose):
+    import pyrealsense2 as rs
 
     rs_args = SimpleNamespace()
     rs_args.realsense_preset = 1
@@ -156,3 +135,27 @@ def get_camera_image(serial_number, camera_pose):
 
     rgb, depth, intrinsics = realsense_capture(pipeline, profile, depth_sensor, align)
     return CameraImage(rgb, depth / 1000.0, None, camera_pose, intrinsics)
+
+
+def realsense_capture(pipeline, profile, depth_sensor, align):
+    import pyrealsense2 as rs
+
+    # Streaming loop
+    print(f"Depth preset value : {depth_sensor.get_option(rs.option.visual_preset)}")
+
+    # Get frameset of color and depth
+    frames = pipeline.wait_for_frames(timeout_ms=10000)
+
+    # Align the depth frame to color frame
+    aligned_frames = align.process(frames)
+
+    # Get aligned frames
+    aligned_depth_frame = aligned_frames.get_depth_frame()
+    color_frame = aligned_frames.get_color_frame()
+
+    depth_image = np.asanyarray(aligned_depth_frame.get_data())
+    color_image = np.asanyarray(color_frame.get_data())
+
+    intrinsics, _ = get_intrinsics(profile, rs.stream.color)
+
+    return color_image, depth_image, intrinsics

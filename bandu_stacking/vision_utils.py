@@ -158,62 +158,6 @@ class CategoryAgnosticSeg(object):
             masks[boundary_mask] = TABLE_IDNUM
         return masks
 
-    def vis_plot(self, rgb_image, seg_mask, return_ax=False, save_fig=False, **kwargs):
-        from detectron2.structures import Instances
-        from detectron2.utils.visualizer import ColorMode, Visualizer
-
-        pred_objs = np.unique(seg_mask)
-        pred_objs = pred_objs[~np.isin(pred_objs, BACKGROUND)]
-
-        from detectron2.structures import Instances
-        from detectron2.utils.colormap import random_color
-        from detectron2.utils.visualizer import ColorMode, GenericMask, Visualizer
-
-        v = Visualizer(rgb_image, scale=1.0, instance_mode=ColorMode.SEGMENTATION)
-        result_wrap = Instances(
-            rgb_image.shape[:2],
-            pred_masks=torch.BoolTensor([seg_mask == obj_id for obj_id in pred_objs]),
-        )
-        masks = np.asarray(result_wrap.pred_masks)
-        masks = [GenericMask(x, v.output.height, v.output.width) for x in masks]
-        alpha = 0.6
-        masks = v._convert_masks(masks)
-        areas = np.asarray([x.area() for x in masks])
-        sorted_idxs = np.argsort(-areas).tolist()
-        masks = [masks[idx] for idx in sorted_idxs] if masks is not None else None
-        num_instances = len(masks)
-        assigned_colors = [
-            random_color(rgb=True, maximum=1) for _ in range(num_instances)
-        ]
-        for ki in range(num_instances):
-            color = assigned_colors[ki]
-            if masks is not None:
-                for segment in masks[ki].polygons:
-                    v.draw_polygon(
-                        segment.reshape(-1, 2), color, alpha=alpha, edge_color="cyan"
-                    )
-        # change edgecolor or alpha value for better visualization
-        v = v.output
-
-        if save_fig:
-            self.fig = v.get_image()
-            return
-        import matplotlib.pyplot as plt
-
-        if return_ax:
-            plt.subplot(2, 2, 3)
-            plt.axis("off")
-            plt.imshow(v.get_image())
-            plt.title(self.__class__.__name__.lower())
-        else:
-            plt.figure(figsize=(14, 7))
-            plt.subplot(1, 2, 1)
-            plt.axis("off")
-            plt.imshow(rgb_image)
-            plt.subplot(1, 2, 2)
-            plt.axis("off")
-            plt.imshow(v.get_image())
-
 
 class UCN(CategoryAgnosticSeg):
     def __init__(self, base_path, device="cuda", **kwargs):
