@@ -386,6 +386,7 @@ def get_plan_place_fn(robot, environment=[], **kwargs):
 
 #######################################################
 
+
 def get_plan_drop_fn(robot, environment=[], z_offset=2e-2, **kwargs):
     robot_saver = BodySaver(robot, **kwargs)
 
