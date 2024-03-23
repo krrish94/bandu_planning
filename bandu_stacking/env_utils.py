@@ -142,10 +142,10 @@ def create_ycb(
 
 
 TABLE_AABB = pbu.AABB(
-    lower=(-0.70 / 2.0, -1.0 / 2.0, -0.03 / 2.0),
-    upper=(0.70 / 2.0, 1.0 / 2.0, 0.03 / 2.0),
+    lower=(-0.50 / 2.0, -1.0 / 2.0, -0.03 / 2.0),
+    upper=(0.50 / 2.0, 1.0 / 2.0, 0.03 / 2.0),
 )
-TABLE_POSE = pbu.Pose((0.45, 0, -TABLE_AABB.upper[2]))
+TABLE_POSE = pbu.Pose((0.35, 0, -TABLE_AABB.upper[2]))
 
 
 def get_data_path():
@@ -618,7 +618,6 @@ class PandaRobot:
         link_names={},
         real_camera=False,
         real_execute=False,
-        camera_matrix=CAMERA_MATRIX,
         **kwargs,
     ):
         self.link_names = link_names
@@ -972,11 +971,11 @@ def get_absolute_pose(base_pose, action):
 
 def check_collision(state, action, client=None):
     assert client is not None
-    target_pose = state.block_poses[state.block_ids.index(action.target_block)]
+    target_pose = state.block_poses[action.target_block]
     src_pose = get_absolute_pose(target_pose, action)
 
     pbu.set_pose(action.grasp_block, src_pose, client=client)
-    for block, block_pose in zip(state.block_ids, state.block_poses):
+    for block, block_pose in state.block_poses.items():
         if block != action.grasp_block:
             pbu.set_pose(block, block_pose, client=client)
             if pbu.pairwise_collision(action.grasp_block, block, client=client):

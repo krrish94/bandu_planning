@@ -2,9 +2,10 @@ from __future__ import print_function
 
 
 class State:
-    def __init__(self, block_ids, block_poses):
+    def __init__(self, block_ids, block_poses, foundation):
         self.block_ids = block_ids
         self.block_poses = block_poses
+        self.foundation = foundation
 
     def __repr__(self):
         return f"State(block_ids={self.block_ids}, block_poses={self.block_poses})"

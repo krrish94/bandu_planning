@@ -2,9 +2,9 @@ from __future__ import print_function
 
 import math
 import random
-from collections import defaultdict
 import sys
 
+import time
 import numpy as np
 import trimesh
 from scipy.spatial.transform import Rotation as R
@@ -160,23 +160,7 @@ class SkeletonPlanner(Policy):
 
     def planning_heuristic(self, initial_state, plan):
         """Get the height of the tower if this plan were to succeed."""
-        TABLE = -1
-        on_dict = defaultdict(
-            lambda: TABLE, {action.grasp_block: action.target_block for action in plan}
-        )
-        height_dict = {TABLE: self.env.table_height}
-
-        def get_height(obj):
-            if obj in height_dict.keys():
-                return height_dict[obj]
-            else:
-                height = aabb_height(
-                    self.env.bounding_boxes[self.env.block_ids.index(obj)]
-                )
-                height_dict[obj] = get_height(on_dict[obj]) + height
-                return height_dict[obj]
-
-        return max([get_height(obj) for obj in initial_state.block_ids])
+        return 1
 
     def sample_constrained_action(
         self, state, source_obj, target_obj, mesh_info, best_face=False, **kwargs
@@ -217,10 +201,10 @@ class SkeletonPlanner(Policy):
         y_offset = random.uniform(-self.env.offset_size, self.env.offset_size)
 
         pbu.set_pose(source_obj, [pbu.unit_point(), r], **kwargs)
-        pbu.set_pose(target_obj, state.block_poses[state.block_ids.index(target_obj)], **kwargs)
+        pbu.set_pose(target_obj, state.block_poses[target_obj], **kwargs)
         ae1 = pbu.get_aabb_extent(pbu.get_aabb(source_obj, **kwargs))
         ae2 = pbu.get_aabb(target_obj, **kwargs)
-        pose = [(x_offset, y_offset, ae2.upper[2]+ae1[2]/2.0 + 0.01), r]
+        pose = [(x_offset, y_offset, ae2.upper[2]+ae1[2]/2.0), r]
 
         return Action(source_obj, target_obj, pose)
 
@@ -261,23 +245,14 @@ class SkeletonPlanner(Policy):
                 skeleton = []
                 state = initial_state
                 collision = False
+                current_tower = [initial_state.foundation]
                 for _ in range(plan_length):
                     # sample target object
                     assert len(initial_state.block_ids) >= 2
-                    target_object = random.choice(initial_state.block_ids)
-
-                    source_options = list(
-                        set(initial_state.block_ids)
-                        - set(
-                            [target_object]
-                            + [p.grasp_block for p in skeleton]
-                            + [p.target_block for p in skeleton]
-                        )
-                    )
-                    if len(source_options) == 0:
-                        break
-
-                    source_object = random.choice(source_options)
+                    
+                    target_object = random.choice(current_tower)
+                    source_options = set(initial_state.block_ids)-set(current_tower)
+                    source_object = random.choice(list(source_options))
 
                     action = self.sample_constrained_action(
                         state, source_object, target_object, mesh_info, client=self.env.client
@@ -285,7 +260,8 @@ class SkeletonPlanner(Policy):
                     if check_collision(state, action, client=self.env.client):
                         collision = True
                         break
-
+                    
+                    current_tower.append(source_object)
                     skeleton.append(action)
 
                 if not collision:
@@ -463,13 +439,11 @@ class SkeletonPlanner(Policy):
 
                     self.env.execute(action)
                     new_state = self.env.state_from_sim()
-                    bid = initial_state.block_ids.index(action.grasp_block)
-                    tid = initial_state.block_ids.index(action.target_block)
-                    np.array(new_state.block_poses[bid][0][:2])
+                    np.array(new_state.block_poses[action.grasp_block][0][:2])
                     adiff = np.linalg.norm(
-                        np.array(new_state.block_poses[tid][0][:2])
+                        np.array(new_state.block_poses[action.target_block][0][:2])
                         + np.array(action.pose[0][:2])
-                        - np.array(new_state.block_poses[bid][0][:2])
+                        - np.array(new_state.block_poses[action.grasp_block][0][:2])
                     )
                     if adiff > diff_thresh:
                         fail = True
@@ -483,17 +457,15 @@ class SkeletonPlanner(Policy):
             else:
 
                 # Sample continuous parameters, test tower height, fail if height not expected
+                print(plan_skeleton)
                 for action in plan_skeleton:
                     self.env.execute(action)
                     new_state = self.env.state_from_sim()
-                    bid = initial_state.block_ids.index(action.grasp_block)
-                    tid = initial_state.block_ids.index(action.target_block)
-
-                    np.array(new_state.block_poses[bid][0][:2])
+                    np.array(new_state.block_poses[action.grasp_block][0][:2])
                     adiff = np.linalg.norm(
-                        np.array(new_state.block_poses[tid][0][:2])
+                        np.array(new_state.block_poses[action.target_block][0][:2])
                         + np.array(action.pose[0][:2])
-                        - np.array(new_state.block_poses[bid][0][:2])
+                        - np.array(new_state.block_poses[action.grasp_block][0][:2])
                     )
                     if adiff > diff_thresh:
                         fail = True
