@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import shutil
+
 import pybullet as p
 
 if __name__ == "__main__":

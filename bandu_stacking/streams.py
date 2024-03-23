@@ -151,7 +151,7 @@ def get_grasp_gen_fn(
         )
         last_time = time.time()
         last_attempts = 0
-        while time.time()-last_time < max_time:  # TODO: filter_grasps
+        while time.time() - last_time < max_time:  # TODO: filter_grasps
             grasp_pose = next(generator)  # TODO: store past grasps
             print(grasp_pose)
             if (

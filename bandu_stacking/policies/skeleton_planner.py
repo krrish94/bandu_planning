@@ -3,8 +3,8 @@ from __future__ import print_function
 import math
 import random
 import sys
-
 import time
+
 import numpy as np
 import trimesh
 from scipy.spatial.transform import Rotation as R
@@ -204,7 +204,7 @@ class SkeletonPlanner(Policy):
         pbu.set_pose(target_obj, state.block_poses[target_obj], **kwargs)
         ae1 = pbu.get_aabb_extent(pbu.get_aabb(source_obj, **kwargs))
         ae2 = pbu.get_aabb(target_obj, **kwargs)
-        pose = [(x_offset, y_offset, ae2.upper[2]+ae1[2]/2.0), r]
+        pose = [(x_offset, y_offset, ae2.upper[2] + ae1[2] / 2.0), r]
 
         return Action(source_obj, target_obj, pose)
 
@@ -249,18 +249,22 @@ class SkeletonPlanner(Policy):
                 for _ in range(plan_length):
                     # sample target object
                     assert len(initial_state.block_ids) >= 2
-                    
+
                     target_object = random.choice(current_tower)
-                    source_options = set(initial_state.block_ids)-set(current_tower)
+                    source_options = set(initial_state.block_ids) - set(current_tower)
                     source_object = random.choice(list(source_options))
 
                     action = self.sample_constrained_action(
-                        state, source_object, target_object, mesh_info, client=self.env.client
+                        state,
+                        source_object,
+                        target_object,
+                        mesh_info,
+                        client=self.env.client,
                     )
                     if check_collision(state, action, client=self.env.client):
                         collision = True
                         break
-                    
+
                     current_tower.append(source_object)
                     skeleton.append(action)
 
@@ -474,15 +478,19 @@ class SkeletonPlanner(Policy):
                         concrete_plan.append(action)
 
                 if not fail:
-                    pbu.wait_if_gui("Run CSP to construct the following tower?", client=self.env.client)
+                    pbu.wait_if_gui(
+                        "Run CSP to construct the following tower?",
+                        client=self.env.client,
+                    )
                     self.env.set_sim_state(initial_state)
                     return concrete_plan
 
     def get_action(self, initial_state):
         if self.plan == None:
             abstract_actions = self.get_plan(initial_state)
-            if(abstract_actions is None):
+            if abstract_actions is None:
                 print("[Planner] There does not exist a physically plausible tower")
+                sys.exit()
             current_state = initial_state
             self.plan = []
             for aai, aa in enumerate(abstract_actions):

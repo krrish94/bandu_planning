@@ -1,9 +1,9 @@
 from __future__ import print_function
 
+import copy
 import os
 import random
 import time
-import copy
 from os import listdir
 from os.path import isfile, join
 
@@ -14,21 +14,19 @@ import pybullet_utils.bullet_client as bc
 import bandu_stacking.pb_utils as pbu
 from bandu_stacking.env_utils import (
     PANDA_PATH,
+    TABLE_AABB,
+    TABLE_POSE,
     PandaRobot,
     WorldState,
     create_default_env,
     create_pybullet_block,
     get_absolute_pose,
-    TABLE_POSE,
-    TABLE_AABB
 )
 from bandu_stacking.policies.policy import State
 from bandu_stacking.realsense_utils import CALIB_DIR, CAMERA_SNS, get_camera_image
 from bandu_stacking.vision_utils import UCN, fuse_predicted_labels, save_camera_images
 
-BANDU_PATH = os.path.join(
-    os.path.dirname(__file__), "models", "bandu_simplified"
-)
+BANDU_PATH = os.path.join(os.path.dirname(__file__), "models", "bandu_simplified")
 
 DEFAULT_TS = 5e-3
 BANDU_SCALING = 0.002
@@ -45,6 +43,7 @@ def iterate_sequence(
         else:
             pbu.wait_for_duration(time_step)
     return state
+
 
 class StackingEnvironment:
     def __init__(
@@ -112,7 +111,11 @@ class StackingEnvironment:
 
         self.block_ids = []
 
-        self.foundation = self.client.loadURDF(os.path.join(BANDU_PATH, "foundation.urdf"), globalScaling=BANDU_SCALING, useFixedBase=True)
+        self.foundation = self.client.loadURDF(
+            os.path.join(BANDU_PATH, "foundation.urdf"),
+            globalScaling=BANDU_SCALING,
+            useFixedBase=True,
+        )
 
         self.block_size = 0.045
         if self.real_camera:
@@ -148,7 +151,7 @@ class StackingEnvironment:
                     client=self.client,
                 )
                 self.block_ids.append(block)
-                
+
         elif object_set == "bandu":
             self.block_ids = self.add_bandu_objects()
         elif object_set == "random":
@@ -169,11 +172,15 @@ class StackingEnvironment:
 
     def add_bandu_objects(self):
         block_ids = []
-        
+
         bandu_filenames = [
             f for f in listdir(BANDU_PATH) if isfile(join(BANDU_PATH, f))
         ]
-        bandu_urdfs = [f for f in bandu_filenames if f.endswith("urdf") and "original" not in f and "foundation" not in f]
+        bandu_urdfs = [
+            f
+            for f in bandu_filenames
+            if f.endswith("urdf") and "original" not in f and "foundation" not in f
+        ]
         for i in range(self.num_blocks):
             bandu_urdf = os.path.join(BANDU_PATH, random.choice(bandu_urdfs))
             obj = self.client.loadURDF(bandu_urdf, globalScaling=BANDU_SCALING)
@@ -205,11 +212,18 @@ class StackingEnvironment:
 
         # Add foundation object
         self.client.removeBody(self.foundation)
-        self.foundation = self.client.loadURDF(os.path.join(BANDU_PATH, "foundation.urdf"), globalScaling=BANDU_SCALING, useFixedBase=True)
+        self.foundation = self.client.loadURDF(
+            os.path.join(BANDU_PATH, "foundation.urdf"),
+            globalScaling=BANDU_SCALING,
+            useFixedBase=True,
+        )
         self.foundation_pose = list(copy.deepcopy(TABLE_POSE))
         self.foundation_pose[0] = list(self.foundation_pose[0])
-        self.foundation_pose[0][2] = pbu.get_aabb_extent(pbu.get_aabb(self.foundation, client=self.client))[2]/2.0
-        self.foundation_pose[1] = pbu.quat_from_euler(pbu.Euler(yaw=np.pi/2.0))
+        self.foundation_pose[0][2] = (
+            pbu.get_aabb_extent(pbu.get_aabb(self.foundation, client=self.client))[2]
+            / 2.0
+        )
+        self.foundation_pose[1] = pbu.quat_from_euler(pbu.Euler(yaw=np.pi / 2.0))
         pbu.set_pose(self.foundation, self.foundation_pose, client=self.client)
         pbu.wait_if_gui(client=self.client)
 
@@ -232,7 +246,8 @@ class StackingEnvironment:
                 timeout -= 1
 
                 rx = random.uniform(
-                    TABLE_POSE[0][0] - self.table_width / 2.0 + x_padding, TABLE_POSE[0][0] + self.table_width / 2.0 - x_padding
+                    TABLE_POSE[0][0] - self.table_width / 2.0 + x_padding,
+                    TABLE_POSE[0][0] + self.table_width / 2.0 - x_padding,
                 )
                 ry = random.uniform(
                     TABLE_POSE[0][1] - self.table_length / 2.0 + y_padding,
@@ -244,7 +259,7 @@ class StackingEnvironment:
                     self._default_orn,
                 )
                 collision = False
-                for placed_block in self.block_ids[:block_index]+[self.foundation]:
+                for placed_block in self.block_ids[:block_index] + [self.foundation]:
                     if pbu.pairwise_collision(
                         block_id, placed_block, client=self.client, max_distance=0.03
                     ):
@@ -263,7 +278,7 @@ class StackingEnvironment:
         block_poses = {self.foundation: self.foundation_pose}
         for block in self.block_ids:
             pose = self.client.getBasePositionAndOrientation(block)
-            block_poses[block]=pose
+            block_poses[block] = pose
         return State(self.block_ids, block_poses, foundation=self.foundation)
 
     def set_sim_state(self, state):
@@ -342,4 +357,4 @@ class StackingEnvironment:
 
     def reward(self, state):
         """Max z value of any object."""
-        return max([bp[0][-1] for bp in state.block_poses])
+        return max([bp[0][-1] for bp in state.block_poses.values()])
