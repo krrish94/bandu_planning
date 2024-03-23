@@ -386,60 +386,7 @@ def get_plan_place_fn(robot, environment=[], **kwargs):
 
 #######################################################
 
-
-def get_plan_mobile_look_fn(
-    robot, environment=[], max_head_attempts=10, max_base_attempts=100, **kwargs
-):
-    robot_saver = BodySaver(robot, **kwargs)
-
-    def fn(obj, pose):
-        while True:
-            robot_saver.restore()
-            # TODO: Return a head conf that will lead to visibility of obj at pose
-            if robot.head_group is None:
-                return None
-            else:
-                pose.assign(**kwargs)
-                limits = list(robot.get_group_limits(robot.head_group))
-                num_base_attempts = 0
-                for base_conf in sample_visibility_base_confs(
-                    robot,
-                    obj,
-                    pose,
-                    **kwargs,
-                ):
-                    visible = False
-                    base_conf.assign(**kwargs)
-                    num_head_attempts = 0
-                    while not visible:
-                        random_head_pos = [
-                            random.uniform(*limit) for limit in zip(*limits)
-                        ]
-                        robot.set_group_positions(robot.head_group, random_head_pos)
-                        visible = robot.cameras[0].object_visible(obj)
-                        num_head_attempts += 1
-                        if num_head_attempts >= max_head_attempts:
-                            break
-                    if num_head_attempts >= max_head_attempts:
-                        continue
-                    gp = random_head_pos
-                    current_hq = GroupConf(
-                        robot,
-                        robot.head_group,
-                        gp,
-                        **kwargs,
-                    )
-                    num_base_attempts += 1
-
-                    yield (base_conf, current_hq)
-                    if num_base_attempts > max_base_attempts:
-                        return None
-            num_attempts += 1
-
-    return fn
-
-
-def get_plan_drop_fn(robot, environment=[], z_offset=2e-2, shrink=0.25, **kwargs):
+def get_plan_drop_fn(robot, environment=[], z_offset=2e-2, **kwargs):
     robot_saver = BodySaver(robot, **kwargs)
 
     def fn(obj, grasp, bin, bin_pose, base_conf):

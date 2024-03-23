@@ -116,7 +116,7 @@ def plan_workspace_motion(
     collision_fn = get_collision_fn(
         robot,
         arm_joints,
-        obstacles=[],
+        obstacles=obstacles,
         attachments=[],
         self_collisions=SELF_COLLISIONS,
         disable_collisions=DISABLE_ALL_COLLISIONS,
@@ -251,17 +251,18 @@ def workspace_collision(
 
 
 def plan_prehensile(robot, obj, pose, grasp, environment=[], **kwargs):
-    obstacles = list(environment)  # + [obj]
+
     pose.assign(**kwargs)
+
     gripper_path = compute_gripper_path(pose, grasp)  # grasp -> pregrasp
     gripper_waypoints = gripper_path[:1] + gripper_path[-1:]
     if workspace_collision(
-        robot, gripper_path, grasp=None, obstacles=obstacles, **kwargs
+        robot, gripper_path, grasp=None, obstacles=environment, **kwargs
     ):
         return None
     create_grasp_attachment(robot, grasp, **kwargs)
     arm_path = plan_workspace_motion(
-        robot, gripper_waypoints, attachment=None, obstacles=obstacles, **kwargs
+        robot, gripper_waypoints, attachment=None, obstacles=environment, **kwargs
     )
     return arm_path
 
