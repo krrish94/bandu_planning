@@ -5,15 +5,7 @@ from collections import OrderedDict
 import numpy as np
 import torch
 
-from bandu_stacking.pb_utils import (
-    BLACK,
-    GREY,
-    WHITE,
-    CameraImage,
-    ensure_dir,
-    save_image,
-    spaced_colors,
-)
+import bandu_stacking.pb_utils as pbu
 from bandu_stacking.ucn.lib.fcn.config import cfg, cfg_from_file
 from bandu_stacking.ucn.lib.fcn.test_dataset import test_sample
 from bandu_stacking.ucn.lib.networks.SEG import seg_resnet34_8s_embedding
@@ -29,7 +21,7 @@ CROP_CKPT_PATH = "data/checkpoints/seg_resnet34_8s_embedding_cosine_rgbd_add_cro
 
 UNKNOWN = "unknown"
 TABLE = "table"
-SPECIAL_CATEGORIES = {None: BLACK, UNKNOWN: GREY, TABLE: WHITE}
+SPECIAL_CATEGORIES = {None: pbu.BLACK, UNKNOWN: pbu.GREY, TABLE: pbu.WHITE}
 
 
 def image_from_labeled(seg_image, **kwargs):
@@ -44,7 +36,7 @@ def image_from_labeled(seg_image, **kwargs):
         if isinstance(label, str) and (label not in SPECIAL_CATEGORIES)
     )
     labels = detect_obj_labels
-    color_from_body = OrderedDict(zip(labels, spaced_colors(len(labels))))
+    color_from_body = OrderedDict(zip(labels, pbu.spaced_colors(len(labels))))
     color_from_body.update(SPECIAL_CATEGORIES)
 
     image = np.zeros(seg_image.shape[:2] + (3,))
@@ -87,7 +79,7 @@ def cloud_from_depth(camera_matrix, depth, max_depth=10.0, top_left_origin=False
 
 
 def fuse_predicted_labels(
-    seg_network, camera_image: CameraImage, use_depth=False, num_segs=1, **kwargs
+    seg_network, camera_image: pbu.CameraImage, use_depth=False, num_segs=1, **kwargs
 ):
 
     point_cloud = None
@@ -110,16 +102,16 @@ def fuse_predicted_labels(
 
 
 def save_camera_images(
-    camera_image: CameraImage, directory="./logs", prefix="", predicted=True, **kwargs
+    camera_image: pbu.CameraImage, directory="./logs", prefix="", **kwargs
 ):
     # safe_remove(directory)
-    ensure_dir(directory)
+    pbu.ensure_dir(directory)
     # depth_image = simulate_depth(depth_image)
-    save_image(
+    pbu.save_image(
         os.path.join(directory, "{}rgb.png".format(prefix)), camera_image.rgbPixels
     )  # [0, 255]
 
-    save_image(
+    pbu.save_image(
         os.path.join(directory, "{}depth.png".format(prefix)), camera_image.depthPixels
     )  # [0, 1]
 
@@ -128,7 +120,7 @@ def save_camera_images(
 
     segmented_image = image_from_labeled(camera_image.segmentationMaskBuffer, **kwargs)
 
-    save_image(
+    pbu.save_image(
         os.path.join(directory, "{}segmented.png".format(prefix)), segmented_image
     )  # [0, 255]
     return segmented_image

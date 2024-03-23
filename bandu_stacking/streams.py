@@ -4,6 +4,7 @@ import time
 
 import numpy as np
 
+import bandu_stacking.pb_utils as pbu
 from bandu_stacking.env_utils import (
     ARM_GROUP,
     GRIPPER_GROUP,
@@ -16,30 +17,6 @@ from bandu_stacking.env_utils import (
     Switch,
 )
 from bandu_stacking.grasping import Z_AXIS, Plane, generate_mesh_grasps, sorted_grasps
-from bandu_stacking.pb_utils import (
-    BodySaver,
-    Euler,
-    Point,
-    Pose,
-    PoseSaver,
-    elapsed_time,
-    get_aabb,
-    get_aabb_center,
-    get_extend_fn,
-    get_moving_links,
-    get_pose,
-    invert,
-    link_from_name,
-    multiply,
-    pairwise_collision,
-    pairwise_collisions,
-    plan_joint_motion,
-    point_from_pose,
-    quat_from_pose,
-    set_joint_positions,
-    set_pose,
-    stable_z_on_aabb,
-)
 from bandu_stacking.samplers import (
     COLLISION_DISTANCE,
     DISABLE_ALL_COLLISIONS,
@@ -49,7 +26,7 @@ from bandu_stacking.samplers import (
     set_open_positions,
 )
 
-TOOL_POSE = Pose(point=Point(x=0.00), euler=Euler(pitch=np.pi / 2))
+TOOL_POSE = pbu.Pose(point=pbu.Point(x=0.00), euler=pbu.Euler(pitch=np.pi / 2))
 
 SWITCH_BEFORE = "grasp"  # contact | grasp | pregrasp | arm | none # TODO: tractor
 BASE_COST = 1
@@ -84,13 +61,15 @@ def close_until_collision(
 
     closed_conf, open_conf = robot.get_group_limits(gripper_group, **kwargs)
     resolutions = np.abs(np.array(open_conf) - np.array(closed_conf)) / num_steps
-    extend_fn = get_extend_fn(robot, gripper_joints, resolutions=resolutions, **kwargs)
+    extend_fn = pbu.get_extend_fn(
+        robot, gripper_joints, resolutions=resolutions, **kwargs
+    )
     close_path = [open_conf] + list(extend_fn(open_conf, closed_conf))
-    collision_links = frozenset(get_moving_links(robot, gripper_joints, **kwargs))
+    collision_links = frozenset(pbu.get_moving_links(robot, gripper_joints, **kwargs))
     for i, conf in enumerate(close_path):
-        set_joint_positions(robot, gripper_joints, conf, **kwargs)
+        pbu.set_joint_positions(robot, gripper_joints, conf, **kwargs)
         if any(
-            pairwise_collision((robot, collision_links), body, **kwargs)
+            pbu.pairwise_collision((robot, collision_links), body, **kwargs)
             for body in bodies
         ):
             if i == 0:
@@ -129,7 +108,12 @@ def get_grasp_candidates(obj, gripper_width=np.inf, grasp_mode="mesh", **kwargs)
         else:
             return tuple([])
     elif grasp_mode == "top":
-        return [multiply(Pose(euler=Euler(pitch=-np.pi / 2.0)), Pose(Point(z=-0.01)))]
+        return [
+            pbu.multiply(
+                pbu.Pose(euler=pbu.Euler(pitch=-np.pi / 2.0)),
+                pbu.Pose(pbu.Point(z=-0.01)),
+            )
+        ]
 
 
 #######################################################
@@ -150,7 +134,7 @@ def get_grasp_gen_fn(
         gripper_collisions = False
 
     def gen_fn(obj, obj_aabb, obj_pose):
-        link_from_name(robot, PANDA_TOOL_TIP, **kwargs)
+        pbu.link_from_name(robot, PANDA_TOOL_TIP, **kwargs)
         closed_conf, open_conf = robot.get_group_limits(GRIPPER_GROUP, **kwargs)
 
         set_open_positions(robot, **kwargs)
@@ -177,13 +161,13 @@ def get_grasp_gen_fn(
             print(grasp_pose)
             if (
                 (grasp_pose is None)
-                or (elapsed_time(last_time) >= max_time)
+                or (pbu.elapsed_time(last_time) >= max_time)
                 or (last_attempts >= max_attempts)
             ):
                 if gripper_width == max_width:
                     print(
                         "Grasps for {} timed out after {} attempts and {:.3f} seconds".format(
-                            obj, last_attempts, elapsed_time(last_time)
+                            obj, last_attempts, pbu.elapsed_time(last_time)
                         )
                     )
                     return
@@ -206,16 +190,16 @@ def get_grasp_gen_fn(
 
             last_attempts += 1
 
-            set_pose(
+            pbu.set_pose(
                 gripper,
-                multiply(
-                    get_pose(obj, **kwargs),
-                    invert(multiply(parent_from_tool, grasp_pose)),
+                pbu.multiply(
+                    pbu.get_pose(obj, **kwargs),
+                    pbu.invert(pbu.multiply(parent_from_tool, grasp_pose)),
                 ),
                 **kwargs,
             )
 
-            set_joint_positions(
+            pbu.set_joint_positions(
                 gripper,
                 robot.get_component_joints(GRIPPER_GROUP, **kwargs),
                 open_conf,
@@ -227,19 +211,23 @@ def get_grasp_gen_fn(
                 obstacles.append(obj)
 
             obstacles.extend(environment)
-            if pairwise_collisions(gripper, obstacles, **kwargs):
+            if pbu.pairwise_collisions(gripper, obstacles, **kwargs):
                 continue
 
-            set_pose(
-                obj, multiply(robot.get_tool_link_pose(**kwargs), grasp_pose), **kwargs
+            pbu.set_pose(
+                obj,
+                pbu.multiply(robot.get_tool_link_pose(**kwargs), grasp_pose),
+                **kwargs,
             )
             set_open_positions(robot, **kwargs)
 
-            if pairwise_collision(gripper, obj, **kwargs):
+            if pbu.pairwise_collision(gripper, obj, **kwargs):
                 continue
 
-            set_pose(
-                obj, multiply(robot.get_tool_link_pose(**kwargs), grasp_pose), **kwargs
+            pbu.set_pose(
+                obj,
+                pbu.multiply(robot.get_tool_link_pose(**kwargs), grasp_pose),
+                **kwargs,
             )
 
             closed_position = closed_conf[0]
@@ -259,7 +247,7 @@ def get_grasp_gen_fn(
 
 
 def get_plan_pick_fn(robot, environment=[], **kwargs):
-    robot_saver = BodySaver(robot, **kwargs)
+    robot_saver = pbu.BodySaver(robot, **kwargs)
     environment = environment
 
     def fn(obj, pose, grasp, base_conf):
@@ -302,7 +290,7 @@ def get_plan_pick_fn(robot, environment=[], **kwargs):
             obj,
             parent=ParentBody(
                 body=robot,
-                link=link_from_name(robot, PANDA_TOOL_TIP, **kwargs),
+                link=pbu.link_from_name(robot, PANDA_TOOL_TIP, **kwargs),
                 **kwargs,
             ),
         )
@@ -331,7 +319,7 @@ def get_plan_pick_fn(robot, environment=[], **kwargs):
 
 
 def get_plan_place_fn(robot, environment=[], **kwargs):
-    robot_saver = BodySaver(robot, **kwargs)
+    robot_saver = pbu.BodySaver(robot, **kwargs)
     environment = environment
 
     def fn(obj, pose, grasp, base_conf):
@@ -388,7 +376,7 @@ def get_plan_place_fn(robot, environment=[], **kwargs):
 
 
 def get_plan_drop_fn(robot, environment=[], z_offset=2e-2, **kwargs):
-    robot_saver = BodySaver(robot, **kwargs)
+    robot_saver = pbu.BodySaver(robot, **kwargs)
 
     def fn(obj, grasp, bin, bin_pose, base_conf):
         robot_saver.restore()
@@ -399,35 +387,37 @@ def get_plan_drop_fn(robot, environment=[], z_offset=2e-2, **kwargs):
         gripper = robot.get_component(GRIPPER_GROUP, **kwargs)
         parent_from_tool = robot.get_parent_from_tool(**kwargs)
 
-        bin_aabb = get_aabb(bin)
+        bin_aabb = pbu.get_aabb(bin)
 
-        reference_pose = multiply(
-            Pose(euler=Euler(pitch=np.pi / 2, yaw=random.uniform(0, 2 * np.pi))),
+        reference_pose = pbu.multiply(
+            pbu.Pose(
+                euler=pbu.Euler(pitch=np.pi / 2, yaw=random.uniform(0, 2 * np.pi))
+            ),
             grasp.value,
         )
-        with PoseSaver(obj):
-            set_pose(obj, reference_pose)
+        with pbu.PoseSaver(obj):
+            pbu.set_pose(obj, reference_pose)
             obj_pose = (
                 np.append(
-                    get_aabb_center(bin_aabb)[:2],
-                    [stable_z_on_aabb(obj, bin_aabb) + z_offset],
+                    pbu.get_aabb_center(bin_aabb)[:2],
+                    [pbu.stable_z_on_aabb(obj, bin_aabb) + z_offset],
                 ),
-                quat_from_pose(reference_pose),
+                pbu.quat_from_pose(reference_pose),
             )  # TODO: get_aabb_top, get_aabb_bottom
 
         if obj_pose is None:
             return None
-        gripper_pose = multiply(obj_pose, invert(grasp.value))
-        set_pose(gripper, multiply(gripper_pose, invert(parent_from_tool)))
-        set_pose(obj, multiply(gripper_pose, grasp.value))
+        gripper_pose = pbu.multiply(obj_pose, pbu.invert(grasp.value))
+        pbu.set_pose(gripper, pbu.multiply(gripper_pose, pbu.invert(parent_from_tool)))
+        pbu.set_pose(obj, pbu.multiply(gripper_pose, grasp.value))
         if any(
-            pairwise_collisions(body, environment, max_distance=0.0)
+            pbu.pairwise_collisions(body, environment, max_distance=0.0)
             for body in [obj, gripper]
         ):
             return None
 
         attachment = grasp.create_attachment(
-            robot, link=link_from_name(robot, PANDA_TOOL_TIP, **kwargs)
+            robot, link=pbu.link_from_name(robot, PANDA_TOOL_TIP, **kwargs)
         )
 
         arm_path = plan_workspace_motion(
@@ -462,7 +452,7 @@ def get_plan_drop_fn(robot, environment=[], z_offset=2e-2, **kwargs):
 def get_plan_motion_fn(
     robot, environment=[], **kwargs
 ):  # , collisions=True): #, teleport=False):
-    robot_saver = BodySaver(robot, **kwargs)
+    robot_saver = pbu.BodySaver(robot, **kwargs)
 
     def fn(q1, q2, attachments=[]):
         robot_saver.restore()
@@ -475,7 +465,7 @@ def get_plan_motion_fn(
 
         resolutions = math.radians(10) * np.ones(len(q2.joints))
 
-        path = plan_joint_motion(
+        path = pbu.plan_joint_motion(
             robot,
             q2.joints,
             q2.positions,
@@ -515,7 +505,7 @@ def get_plan_motion_fn(
 
 def get_nominal_test(robot, side="left", axis=1, **kwargs):
     def gen_fn(obj, pose, region, region_pose):
-        value = point_from_pose(pose.relative_pose)[axis]
+        value = pbu.point_from_pose(pose.relative_pose)[axis]
         success = (value > 0) if side == "left" else (value < 0)
         return success
 

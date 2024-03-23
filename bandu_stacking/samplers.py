@@ -2,37 +2,17 @@ from __future__ import print_function
 
 import numpy as np
 
+import bandu_stacking.pb_utils as pbu
 from bandu_stacking.env_utils import (
     ARM_GROUP,
     GRIPPER_GROUP,
     PANDA_INFO,
     PANDA_TOOL_TIP,
-    GroupConf,
 )
 from bandu_stacking.inverse_kinematics.ikfast import (
     closest_inverse_kinematics,
     get_ik_joints,
     ikfast_inverse_kinematics,
-)
-from bandu_stacking.pb_utils import (
-    BodySaver,
-    draw_collision_info,
-    get_closest_points,
-    get_collision_fn,
-    get_sample_fn,
-    interpolate_joint_waypoints,
-    interpolate_poses,
-    inverse_kinematics,
-    invert,
-    link_from_name,
-    multiply,
-    pairwise_collisions,
-    point_from_pose,
-    safe_zip,
-    set_joint_positions,
-    set_pose,
-    uniform_pose_generator,
-    wait_if_gui,
 )
 
 USING_ROS = False
@@ -54,20 +34,20 @@ DISABLE_ALL_COLLISIONS = True
 def get_closest_distance(robot, arm_joints, parent_link, tool_link, gripper_pose, obj):
     # TODO: operate on the object
     # gripper_pose = get_pose(obj)
-    reach_pose = (point_from_pose(gripper_pose), None)
-    sample_fn = get_sample_fn(robot, arm_joints)
-    set_joint_positions(robot, arm_joints, sample_fn())
+    reach_pose = (pbu.point_from_pose(gripper_pose), None)
+    sample_fn = pbu.get_sample_fn(robot, arm_joints)
+    pbu.set_joint_positions(robot, arm_joints, sample_fn())
     # inverse_kinematics(robot, tool_link, reach_pose)
     # sub_inverse_kinematics(robot, arm_joints[0], tool_link, reach_pose)
-    inverse_kinematics(robot, arm_joints[0], tool_link, reach_pose)
+    pbu.inverse_kinematics(robot, arm_joints[0], tool_link, reach_pose)
     # collision_infos = get_closest_points(robot, obj, max_distance=np.inf)
-    collision_infos = get_closest_points(
+    collision_infos = pbu.get_closest_points(
         robot, obj, link1=parent_link, max_distance=np.inf
     )  # tool_link
     print("Collisions: {}".format(len(collision_infos)))
     for collision_info in collision_infos:
-        draw_collision_info(collision_info)
-    wait_if_gui()
+        pbu.draw_collision_info(collision_info)
+    pbu.wait_if_gui()
     return min(
         [np.inf]
         + [collision_info.contactDistance for collision_info in collision_infos]
@@ -80,10 +60,10 @@ def get_closest_distance(robot, arm_joints, parent_link, tool_link, gripper_pose
 def compute_gripper_path(pose, grasp, pos_step_size=0.02):
     # TODO: move linearly out of contact and then interpolate (ensure no collisions with the table)
     # grasp -> pregrasp
-    grasp_pose = multiply(pose.get_pose(), invert(grasp.grasp))
-    pregrasp_pose = multiply(pose.get_pose(), invert(grasp.pregrasp))
+    grasp_pose = pbu.multiply(pose.get_pose(), pbu.invert(grasp.grasp))
+    pregrasp_pose = pbu.multiply(pose.get_pose(), pbu.invert(grasp.pregrasp))
     gripper_path = list(
-        interpolate_poses(grasp_pose, pregrasp_pose, pos_step_size=pos_step_size)
+        pbu.interpolate_poses(grasp_pose, pregrasp_pose, pos_step_size=pos_step_size)
     )
     # handles = list(flatten(draw_pose(waypoint_pose, length=0.02) for waypoint_pose in gripper_path))
     return gripper_path
@@ -92,7 +72,7 @@ def compute_gripper_path(pose, grasp, pos_step_size=0.02):
 def create_grasp_attachment(robot, grasp, **kwargs):
     # TODO: robot.get_tool_link(side)
     return grasp.create_attachment(
-        robot, link=link_from_name(robot, PANDA_TOOL_TIP, **kwargs)
+        robot, link=pbu.link_from_name(robot, PANDA_TOOL_TIP, **kwargs)
     )
 
 
@@ -101,19 +81,19 @@ def plan_workspace_motion(
 ):
     assert tool_waypoints
 
-    tool_link = link_from_name(robot, PANDA_TOOL_TIP, **kwargs)
+    tool_link = pbu.link_from_name(robot, PANDA_TOOL_TIP, **kwargs)
     ik_joints = get_ik_joints(robot, PANDA_INFO, tool_link, **kwargs)  # Arm + torso
     fixed_joints = set(ik_joints) - set(
         robot.get_group_joints(ARM_GROUP, **kwargs)
     )  # Torso only
     arm_joints = [j for j in ik_joints if j not in fixed_joints]  # Arm only
     extract_arm_conf = lambda q: [
-        p for j, p in safe_zip(ik_joints, q) if j not in fixed_joints
+        p for j, p in pbu.safe_zip(ik_joints, q) if j not in fixed_joints
     ]
     # tool_path = interpolate_poses(tool_waypoints[0], tool_waypoints[-1])
 
     parts = [robot] + ([] if attachment is None else [attachment.child])
-    collision_fn = get_collision_fn(
+    collision_fn = pbu.get_collision_fn(
         robot,
         arm_joints,
         obstacles=obstacles,
@@ -167,14 +147,13 @@ def plan_workspace_motion(
                 if collision_fn(arm_conf):
                     continue
                 arm_waypoints.append(arm_conf)
-                # wait_if_gui()
             else:
-                set_joint_positions(robot, arm_joints, arm_waypoints[-1], **kwargs)
+                pbu.set_joint_positions(robot, arm_joints, arm_waypoints[-1], **kwargs)
                 if attachment is not None:
                     attachment.assign(**kwargs)
                 if (
                     any(
-                        pairwise_collisions(
+                        pbu.pairwise_collisions(
                             part,
                             obstacles,
                             max_distance=(COLLISION_DISTANCE + EPSILON),
@@ -185,7 +164,7 @@ def plan_workspace_motion(
                     and not DISABLE_ALL_COLLISIONS
                 ):
                     continue
-                arm_path = interpolate_joint_waypoints(
+                arm_path = pbu.interpolate_joint_waypoints(
                     robot, arm_joints, arm_waypoints, **kwargs
                 )
 
@@ -220,30 +199,28 @@ def workspace_collision(
     gripper = robot.get_component(GRIPPER_GROUP, **kwargs)
 
     if open_gripper:
-        # TODO: make a separate method?
-        closed_conf, open_conf = robot.get_group_limits(GRIPPER_GROUP, **kwargs)
+        _, open_conf = robot.get_group_limits(GRIPPER_GROUP, **kwargs)
         gripper_joints = robot.get_component_joints(GRIPPER_GROUP, **kwargs)
-        set_joint_positions(gripper, gripper_joints, open_conf, **kwargs)
+        pbu.set_joint_positions(gripper, gripper_joints, open_conf, **kwargs)
 
-    # attachment = grasp.create_attachment(gripper) # TODO: correct for parent_from_tool (e.g. RelativePose)
     parent_from_tool = robot.get_parent_from_tool(**kwargs)
-    parts = [gripper]  # , obj]
+    parts = [gripper]
     if grasp is not None:
         parts.append(grasp.body)
-    for i, gripper_pose in enumerate(
-        gripper_path
-    ):  # TODO: be careful about the initial pose
-        set_pose(gripper, multiply(gripper_pose, invert(parent_from_tool)), **kwargs)
+    for i, gripper_pose in enumerate(gripper_path):
+        pbu.set_pose(
+            gripper, pbu.multiply(gripper_pose, pbu.invert(parent_from_tool)), **kwargs
+        )
         if grasp is not None:
-            set_pose(grasp.body, multiply(gripper_pose, grasp.value), **kwargs)
-        # attachment.assign()
+            pbu.set_pose(grasp.body, pbu.multiply(gripper_pose, grasp.value), **kwargs)
+
         distance = (
             (COLLISION_DISTANCE + EPSILON)
             if (i == len(gripper_path) - 1)
             else max_distance
         )
         if any(
-            pairwise_collisions(part, obstacles, max_distance=distance, **kwargs)
+            pbu.pairwise_collisions(part, obstacles, max_distance=distance, **kwargs)
             for part in parts
         ):
             return True
@@ -254,7 +231,7 @@ def plan_prehensile(robot, obj, pose, grasp, environment=[], **kwargs):
 
     pose.assign(**kwargs)
 
-    gripper_path = compute_gripper_path(pose, grasp)  # grasp -> pregrasp
+    gripper_path = compute_gripper_path(pose, grasp)
     gripper_waypoints = gripper_path[:1] + gripper_path[-1:]
     if workspace_collision(
         robot, gripper_path, grasp=None, obstacles=environment, **kwargs

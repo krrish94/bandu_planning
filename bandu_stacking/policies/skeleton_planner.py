@@ -1,13 +1,13 @@
 import math
 import random
-from collections import defaultdict, namedtuple
+from collections import defaultdict
 
 import numpy as np
 import trimesh
 from scipy.spatial.transform import Rotation as R
 from tqdm import tqdm
 
-from bandu_stacking.bandu_utils import check_collision, mesh_from_obj
+import bandu_stacking.pb_utils as pbu
 from bandu_stacking.env import TABLE_AABB, get_absolute_pose
 from bandu_stacking.env_utils import (
     ARM_GROUP,
@@ -17,17 +17,8 @@ from bandu_stacking.env_utils import (
     PandaRobot,
     RelativePose,
     Sequence,
-)
-from bandu_stacking.pb_utils import (
-    AABB,
-    Euler,
-    Point,
-    Pose,
-    get_aabb,
-    get_joint_positions,
-    get_pose,
-    link_from_name,
-    stable_z_on_aabb,
+    check_collision,
+    mesh_from_obj,
 )
 from bandu_stacking.policies.policy import Action, Policy
 from bandu_stacking.streams import (
@@ -38,7 +29,7 @@ from bandu_stacking.streams import (
 )
 
 
-def aabb_height(aabb: AABB):
+def aabb_height(aabb: pbu.AABB):
     return aabb.upper[2] - aabb.lower[2]
 
 
@@ -48,7 +39,7 @@ def get_current_confs(robot: PandaRobot, **kwargs):
         group: GroupConf(
             robot,
             group,
-            get_joint_positions(
+            pbu.get_joint_positions(
                 robot, robot.get_group_joints(group, **kwargs), **kwargs
             ),
             important=True,
@@ -59,13 +50,13 @@ def get_current_confs(robot: PandaRobot, **kwargs):
 
 
 def get_random_placement_pose(obj, surface_aabb, client):
-    return Pose(
-        point=Point(
+    return pbu.Pose(
+        point=pbu.Point(
             x=random.uniform(surface_aabb.lower[0], surface_aabb.upper[0]),
             y=random.uniform(surface_aabb.upper[1], surface_aabb.upper[1]),
-            z=stable_z_on_aabb(obj, surface_aabb, client=client),
+            z=pbu.stable_z_on_aabb(obj, surface_aabb, client=client),
         ),
-        euler=Euler(yaw=random.uniform(0, math.pi * 2)),
+        euler=pbu.Euler(yaw=random.uniform(0, math.pi * 2)),
     )
 
 
@@ -80,7 +71,9 @@ def get_pick_place_plan(abstract_action, env):
     surface_aabb = TABLE_AABB
 
     obj = abstract_action.grasp_block
-    obj_aabb, obj_pose = get_aabb(obj, client=client), get_pose(obj, client=client)
+    obj_aabb, obj_pose = pbu.get_aabb(obj, client=client), pbu.get_pose(
+        obj, client=client
+    )
 
     target_pose = client.getBasePositionAndOrientation(abstract_action.target_block)
     placement_pose = get_absolute_pose(target_pose, abstract_action)
@@ -136,7 +129,7 @@ def get_pick_place_plan(abstract_action, env):
         q3, at2 = place
 
         attachment = grasp.create_attachment(
-            robot, link=link_from_name(robot, PANDA_TOOL_TIP, client=client)
+            robot, link=pbu.link_from_name(robot, PANDA_TOOL_TIP, client=client)
         )
 
         print("[Planner] finding pick motion plan")
@@ -369,7 +362,7 @@ class SkeletonPlanner(Policy):
             block_dict["mesh"] = tmesh
             block_dict["vertices"] = tmesh.vertices
             block_dict["faces"] = tmesh.faces
-            block_dict["aabb"] = get_aabb(block_id, client=self.env.client)
+            block_dict["aabb"] = pbu.get_aabb(block_id, client=self.env.client)
             block_dict["center_of_mass"] = tmesh.center_mass
             block_dict["volume"] = tmesh.volume
             # Find geometric center of the block (i.e., center of the AABB)

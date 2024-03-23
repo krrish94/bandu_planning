@@ -11,79 +11,14 @@ import pybullet as p
 import pybullet_utils.bullet_client as bc
 import trimesh
 
+import bandu_stacking.pb_utils as pbu
 from bandu_stacking.inverse_kinematics.utils import IKFastInfo
-from bandu_stacking.pb_utils import (
-    AABB,
-    BASE_LINK,
-    DEFAULT_CLIENT,
-    RGBA,
-    STATIC_MASS,
-    WHITE,
-    Attachment,
-    ConfSaver,
-    Point,
-    Pose,
-    State,
-    WorldSaver,
-    add_fixed_constraint,
-    adjust_path,
-    apply_alpha,
-    clone_body,
-    create_box,
-    create_collision_shape,
-    create_visual_shape,
-    empty_sequence,
-    get_aabb_extent,
-    get_bodies,
-    get_camera_matrix,
-    get_closest_points,
-    get_collision_data,
-    get_custom_limits,
-    get_distance,
-    get_fixed_constraints,
-    get_image_at_pose,
-    get_joint_names,
-    get_joint_positions,
-    get_joints,
-    get_link_children,
-    get_link_parent,
-    get_link_pose,
-    get_link_subtree,
-    get_mass,
-    get_max_limits,
-    get_mesh_geometry,
-    get_movable_joint_descendants,
-    get_movable_joints,
-    get_moving_links,
-    get_pose,
-    get_relative_pose,
-    interpolate_path,
-    invert,
-    is_fixed_base,
-    joint_from_name,
-    joints_from_names,
-    link_from_name,
-    list_paths,
-    load_pybullet,
-    multiply,
-    remove_body,
-    remove_constraint,
-    safe_zip,
-    set_all_color,
-    set_dynamics,
-    set_joint_position,
-    set_joint_positions,
-    set_pose,
-    step_curve,
-    unit_pose,
-    waypoints_from_path,
-)
 
 GRIPPER_GROUP = "main_gripper"
 CAMERA_FRAME = "camera_frame"
 CAMERA_OPTICAL_FRAME = "camera_frame"
 PANDA_TOOL_TIP = "panda_tool_tip"
-TRANSPARENT = RGBA(0, 0, 0, 0)
+TRANSPARENT = pbu.RGBA(0, 0, 0, 0)
 
 ROOT_PATH = os.path.abspath(os.path.join(__file__, *[os.pardir] * 1))
 SRL_PATH = os.path.join(ROOT_PATH, "models/srl")
@@ -94,7 +29,7 @@ FX, FY = 525.0 / 2, 525.0 / 2
 
 # OPEN_GRIPPER_POS = [0.045, 0.045]
 OPEN_GRIPPER_POS = [10, 10]
-CAMERA_MATRIX = get_camera_matrix(WIDTH, HEIGHT, FX, FY)
+CAMERA_MATRIX = pbu.get_camera_matrix(WIDTH, HEIGHT, FX, FY)
 PANDA_GROUPS = {
     "base": [],
     "main_arm": ["panda_joint{}".format(i) for i in range(1, 8)],
@@ -137,17 +72,17 @@ def ycb_type_from_file(path):
 
 
 def all_ycb_names():
-    return [ycb_type_from_file(path) for path in list_paths(YCB_PATH)]
+    return [ycb_type_from_file(path) for path in pbu.list_paths(YCB_PATH)]
 
 
 def all_ycb_paths():
-    return list_paths(YCB_PATH)
+    return pbu.list_paths(YCB_PATH)
 
 
 def get_ycb_obj_path(ycb_type, use_concave=False):
     path_from_type = {
         ycb_type_from_file(path): path
-        for path in list_paths(YCB_PATH)
+        for path in pbu.list_paths(YCB_PATH)
         if os.path.isdir(path)
     }
 
@@ -169,27 +104,27 @@ def create_ycb(
     scale=1.0,
     **kwargs,
 ):
-    client = client or DEFAULT_CLIENT
+    client = client or pbu.DEFAULT_CLIENT
     concave_ycb_path = get_ycb_obj_path(name, use_concave=use_concave)
     ycb_path = get_ycb_obj_path(name)
     mass = -1
 
     # TODO: separate visual and collision boddies
-    color = WHITE
+    color = pbu.WHITE
 
     mesh = trimesh.load(ycb_path)
 
     # TODO: separate visual and collision geometries
     # TODO: compute OOBB to select the orientation
-    visual_geometry = get_mesh_geometry(
+    visual_geometry = pbu.get_mesh_geometry(
         ycb_path, scale=scale
     )  # TODO: randomly transform
-    collision_geometry = get_mesh_geometry(concave_ycb_path, scale=scale)
-    geometry_pose = Pose(point=-mesh.center_mass)
-    collision_id = create_collision_shape(
+    collision_geometry = pbu.get_mesh_geometry(concave_ycb_path, scale=scale)
+    geometry_pose = pbu.Pose(point=-mesh.center_mass)
+    collision_id = pbu.create_collision_shape(
         collision_geometry, pose=geometry_pose, client=client
     )
-    visual_id = create_visual_shape(
+    visual_id = pbu.create_visual_shape(
         visual_geometry, color=color, pose=geometry_pose, client=client
     )
     # collision_id, visual_id = create_shape(geometry, collision=True, color=WHITE)
@@ -200,17 +135,17 @@ def create_ycb(
         # basePosition=[0., 0., 0.1]
     )
 
-    set_all_color(body, apply_alpha(color, alpha=1.0), client=client)
+    pbu.set_all_color(body, pbu.apply_alpha(color, alpha=1.0), client=client)
     # dump_body(body)
     # wait_if_gui()
     return body
 
 
-TABLE_AABB = AABB(
+TABLE_AABB = pbu.AABB(
     lower=(-0.70 / 2.0, -1.0 / 2.0, -0.03 / 2.0),
     upper=(0.70 / 2.0, 1.0 / 2.0, 0.03 / 2.0),
 )
-TABLE_POSE = Pose((0.45, 0, -TABLE_AABB.upper[2]))
+TABLE_POSE = pbu.Pose((0.45, 0, -TABLE_AABB.upper[2]))
 
 
 def get_data_path():
@@ -241,14 +176,14 @@ def create_default_env(
 
     add_data_path()
     floor, _ = add_table(
-        *get_aabb_extent(table_aabb), table_pose=table_pose, client=client
+        *pbu.get_aabb_extent(table_aabb), table_pose=table_pose, client=client
     )
     obstacles = [
         floor,  # collides with the robot when MAX_DISTANCE >= 5e-3
     ]
 
     for obst in obstacles:
-        set_dynamics(
+        pbu.set_dynamics(
             obst,
             lateralFriction=1.0,  # linear (lateral) friction
             spinningFriction=1.0,  # torsional friction around the contact normal
@@ -264,22 +199,22 @@ def add_table(
     table_width: float = 0.75,
     table_length: float = 1.22,
     table_thickness: float = 0.03,
-    table_pose: Pose = TABLE_POSE,
+    table_pose: pbu.Pose = TABLE_POSE,
     color: Tuple[float, float, float, float] = (0.75, 0.75, 0.75, 1.0),
     client=None,
 ) -> Tuple[int, List[int]]:
     # Panda table downstairs very roughly (few cm of error)
-    table = create_box(
+    table = pbu.create_box(
         table_width, table_length, table_thickness, color=color, client=client
     )
-    set_pose(table, table_pose, client=client)
+    pbu.set_pose(table, table_pose, client=client)
     workspace = []
 
     return table, workspace
 
 
 def all_ycb_names():
-    return [ycb_type_from_file(path) for path in list_paths(YCB_PATH)]
+    return [ycb_type_from_file(path) for path in pbu.list_paths(YCB_PATH)]
 
 
 class SimulatedController:
@@ -299,10 +234,12 @@ class SimulatedController:
         self.command_group(gripper_group, closed_conf)
 
     def get_group_joints(self, group, **kwargs):
-        return joints_from_names(self.robot, self.robot.joint_groups[group], **kwargs)
+        return pbu.joints_from_names(
+            self.robot, self.robot.joint_groups[group], **kwargs
+        )
 
     def set_group_conf(self, group, positions, **kwargs):
-        set_joint_positions(
+        pbu.set_joint_positions(
             self.robot, self.get_group_joints(group, **kwargs), positions, **kwargs
         )
 
@@ -310,9 +247,9 @@ class SimulatedController:
         self.set_group_conf(group, positions, **kwargs)
 
     def get_joint_positions(self, **kwargs):
-        joints = get_joints(self.robot, **kwargs)
-        joint_positions = get_joint_positions(self.robot, joints, **kwargs)
-        joint_names = get_joint_names(self.robot, joints, **kwargs)
+        joints = pbu.get_joints(self.robot, **kwargs)
+        joint_positions = pbu.get_joint_positions(self.robot, joints, **kwargs)
+        joint_names = pbu.get_joint_names(self.robot, joints, **kwargs)
         return {k: v for k, v in zip(joint_names, joint_positions)}
 
     def command_group(self, group, positions, **kwargs):  # TODO: default timeout
@@ -340,7 +277,7 @@ def setup_robot_pybullet(gui=False):
     client = bc.BulletClient(connection_mode=p.GUI if gui else p.DIRECT)
     client.configureDebugVisualizer(p.COV_ENABLE_GUI, 0)
     client.configureDebugVisualizer(p.COV_ENABLE_SHADOWS, 0)
-    robot_body = load_pybullet(PANDA_PATH, fixed_base=True, client=client)
+    robot_body = pbu.load_pybullet(PANDA_PATH, fixed_base=True, client=client)
     return robot_body, client
 
 
@@ -364,7 +301,7 @@ class Conf(object):  # TODO: parent class among Pose, Grasp, and Conf
         return self.positions
 
     def assign(self, **kwargs):
-        set_joint_positions(self.body, self.joints, self.positions, **kwargs)
+        pbu.set_joint_positions(self.body, self.joints, self.positions, **kwargs)
 
     def iterate(self):
         yield self
@@ -421,7 +358,9 @@ class Switch(Command):
             gripper_joints = robot.get_group_joints(GRIPPER_GROUP, **kwargs)
             finger_links = robot.get_finger_links(gripper_joints, **kwargs)
 
-            movable_bodies = [body for body in get_bodies(**kwargs) if (body != robot)]
+            movable_bodies = [
+                body for body in pbu.get_bodies(**kwargs) if (body != robot)
+            ]
 
             # collision_bodies = [body for body in movable_bodies if any_link_pair_collision(
             #    robot, finger_links, body, max_distance=1e-2)]
@@ -437,12 +376,12 @@ class Switch(Command):
                 for body in movable_bodies
                 if (
                     all(
-                        get_closest_points(
+                        pbu.get_closest_points(
                             robot, body, link1=link, max_distance=max_distance, **kwargs
                         )
                         for link in finger_links
                     )
-                    and get_mass(body, **kwargs) != STATIC_MASS
+                    and pbu.get_mass(body, **kwargs) != pbu.STATIC_MASS
                 )
             ]
 
@@ -452,15 +391,15 @@ class Switch(Command):
                 )
                 state.attachments[self.body] = relative_pose
 
-        return empty_sequence()
+        return pbu.empty_sequence()
 
     def controller(self, use_constraints=USE_CONSTRAINTS, **kwargs):
         if not use_constraints:
             return  # empty_sequence()
         if self.parent is None:
             # TODO: record the robot and tool_link
-            for constraint in get_fixed_constraints():
-                remove_constraint(constraint)
+            for constraint in pbu.get_fixed_constraints():
+                pbu.remove_constraint(constraint)
         else:
             robot, tool_link = self.parent
             gripper_group = None
@@ -469,7 +408,7 @@ class Switch(Command):
                 gripper_group,
                 tool_name,
             ) in robot.manipulators.items():
-                if link_from_name(robot, tool_name) == tool_link:
+                if pbu.link_from_name(robot, tool_name) == tool_link:
                     break
             else:
                 raise RuntimeError(tool_link)
@@ -478,8 +417,8 @@ class Switch(Command):
 
             movable_bodies = [
                 body
-                for body in get_bodies(**kwargs)
-                if (body != robot) and not is_fixed_base(body, **kwargs)
+                for body in pbu.get_bodies(**kwargs)
+                if (body != robot) and not pbu.is_fixed_base(body, **kwargs)
             ]
             # collision_bodies = [body for body in movable_bodies if any_link_pair_collision(
             #    robot, finger_links, body, max_distance=1e-2)]
@@ -490,16 +429,15 @@ class Switch(Command):
                 body
                 for body in movable_bodies
                 if all(
-                    get_closest_points(
+                    pbu.get_closest_points(
                         robot, body, link1=link, max_distance=max_distance
                     )
                     for link in finger_links
                 )
             ]
             for body in collision_bodies:
-                # TODO: improve the PR2's gripper force
-                add_fixed_constraint(body, robot, tool_link, max_force=None)
-        # TODO: yield for longer
+                pbu.add_fixed_constraint(body, robot, tool_link, max_force=None)
+
         yield
 
     def __repr__(self):
@@ -561,29 +499,29 @@ class Trajectory(Command):
         )
 
     def adjust_path(self, **kwargs):
-        current_positions = get_joint_positions(
+        current_positions = pbu.get_joint_positions(
             self.body, self.joints, **kwargs
         )  # Important for adjust_path
-        return adjust_path(
+        return pbu.adjust_path(
             self.body, self.joints, [current_positions] + list(self.path), **kwargs
         )  # Accounts for the wrap around
 
     def compute_waypoints(self, **kwargs):
-        return waypoints_from_path(
-            adjust_path(self.body, self.joints, self.path, **kwargs)
+        return pbu.waypoints_from_path(
+            pbu.adjust_path(self.body, self.joints, self.path, **kwargs)
         )
 
     def compute_curve(self, **kwargs):
         path = self.adjust_path(**kwargs)
-        positions_curve = interpolate_path(self.body, self.joints, path, **kwargs)
+        positions_curve = pbu.interpolate_path(self.body, self.joints, path, **kwargs)
         return positions_curve
 
     def iterate(self, state, teleport=False, **kwargs):
         if teleport:
-            set_joint_positions(self.body, self.joints, self.path[-1], **kwargs)
+            pbu.set_joint_positions(self.body, self.joints, self.path[-1], **kwargs)
             return self.path[-1]
         else:
-            return step_curve(
+            return pbu.step_curve(
                 self.body, self.joints, self.compute_curve(**kwargs), **kwargs
             )
 
@@ -630,8 +568,9 @@ class RelativePose(object):
         if not isinstance(self.body, int):
             self.body = int(str(self.body).split("#")[1])
         if relative_pose is None:
-            relative_pose = multiply(
-                invert(self.get_parent_pose(**kwargs)), get_pose(self.body, **kwargs)
+            relative_pose = pbu.multiply(
+                pbu.invert(self.get_parent_pose(**kwargs)),
+                pbu.get_pose(self.body, **kwargs),
             )
         self.relative_pose = tuple(relative_pose)
         self.important = important
@@ -647,23 +586,23 @@ class RelativePose(object):
 
     def get_parent_pose(self, **kwargs):
         if self.parent is None:
-            return unit_pose()
+            return pbu.unit_pose()
         if self.parent_state is not None:
             self.parent_state.assign(**kwargs)
         return self.parent.get_pose(**kwargs)
 
     def get_pose(self, **kwargs):
-        return multiply(self.get_parent_pose(**kwargs), self.relative_pose)
+        return pbu.multiply(self.get_parent_pose(**kwargs), self.relative_pose)
 
     def assign(self, **kwargs):
         world_pose = self.get_pose(**kwargs)
-        set_pose(self.body, world_pose, **kwargs)
+        pbu.set_pose(self.body, world_pose, **kwargs)
         return world_pose
 
     def get_attachment(self, **kwargs):
         assert self.parent is not None
         parent_body, parent_link = self.parent
-        return Attachment(
+        return pbu.Attachment(
             parent_body, parent_link, self.relative_pose, self.body, **kwargs
         )
 
@@ -718,12 +657,12 @@ class PandaRobot:
         }
 
     def get_group_joints(self, group, **kwargs):
-        return joints_from_names(self.body, PANDA_GROUPS[group], **kwargs)
+        return pbu.joints_from_names(self.body, PANDA_GROUPS[group], **kwargs)
 
     def update_conf(self, conf, **kwargs):
         for name, position in conf.items():
-            joint = joint_from_name(self, name, **kwargs)
-            set_joint_position(self, joint, position, **kwargs)
+            joint = pbu.joint_from_name(self, name, **kwargs)
+            pbu.set_joint_position(self, joint, position, **kwargs)
         return conf
 
     def update_sim_conf(self, **kwargs):
@@ -743,43 +682,43 @@ class PandaRobot:
                 self.controller.set_group_positions(group, positions, **kwargs)
 
     def get_group_limits(self, group, **kwargs):
-        return get_custom_limits(
+        return pbu.get_custom_limits(
             self.body, self.get_group_joints(group, **kwargs), **kwargs
         )
 
     def get_gripper_width(self, gripper_joints, **kwargs):
         [link1, link2] = self.get_finger_links(gripper_joints, **kwargs)
-        [collision_info] = get_closest_points(
+        [collision_info] = pbu.get_closest_points(
             self.body, self.body, link1, link2, max_distance=np.inf, **kwargs
         )
         point1 = collision_info.positionOnA
         point2 = collision_info.positionOnB
-        max_width = get_distance(point1, point2)
+        max_width = pbu.get_distance(point1, point2)
         return max_width
 
     def get_max_gripper_width(self, gripper_joints, **kwargs):
-        with ConfSaver(self, **kwargs):
-            set_joint_positions(
+        with pbu.ConfSaver(self, **kwargs):
+            pbu.set_joint_positions(
                 self.body,
                 gripper_joints,
-                get_max_limits(self.body, gripper_joints, **kwargs),
+                pbu.get_max_limits(self.body, gripper_joints, **kwargs),
                 **kwargs,
             )
             return self.get_gripper_width(gripper_joints, **kwargs)
 
     def get_finger_links(self, gripper_joints, **kwargs):
-        moving_links = get_moving_links(self.body, gripper_joints, **kwargs)
+        moving_links = pbu.get_moving_links(self.body, gripper_joints, **kwargs)
         shape_links = [
             link
             for link in moving_links
-            if get_collision_data(self.body, link, **kwargs)
+            if pbu.get_collision_data(self.body, link, **kwargs)
         ]
         finger_links = [
             link
             for link in shape_links
             if not any(
-                get_collision_data(self.body, child, **kwargs)
-                for child in get_link_children(self.body, link, **kwargs)
+                pbu.get_collision_data(self.body, child, **kwargs)
+                for child in pbu.get_link_children(self.body, link, **kwargs)
             )
         ]
         if len(finger_links) != 2:
@@ -788,28 +727,28 @@ class PandaRobot:
 
     def get_group_parent(self, group, **kwargs):
         # TODO: handle unordered joints
-        return get_link_parent(
+        return pbu.get_link_parent(
             self.body, self.get_group_joints(group, **kwargs)[0], **kwargs
         )
 
     def get_tool_link_pose(self, **kwargs):
-        tool_link = link_from_name(self.body, PANDA_TOOL_TIP, **kwargs)
-        return get_link_pose(self.body, tool_link, **kwargs)
+        tool_link = pbu.link_from_name(self.body, PANDA_TOOL_TIP, **kwargs)
+        return pbu.get_link_pose(self.body, tool_link, **kwargs)
 
     def get_parent_from_tool(self, **kwargs):
-        tool_tip_link = link_from_name(self.body, PANDA_TOOL_TIP, **kwargs)
+        tool_tip_link = pbu.link_from_name(self.body, PANDA_TOOL_TIP, **kwargs)
         parent_link = self.get_group_parent(GRIPPER_GROUP, **kwargs)
-        return get_relative_pose(self.body, tool_tip_link, parent_link, **kwargs)
+        return pbu.get_relative_pose(self.body, tool_tip_link, parent_link, **kwargs)
 
     def get_component_mapping(self, group, **kwargs):
         assert group in self.components
-        component_joints = get_movable_joints(
+        component_joints = pbu.get_movable_joints(
             self.components[group], draw=False, **kwargs
         )
-        body_joints = get_movable_joint_descendants(
+        body_joints = pbu.get_movable_joint_descendants(
             self.body, self.get_group_parent(group, **kwargs), **kwargs
         )
-        return OrderedDict(safe_zip(body_joints, component_joints))
+        return OrderedDict(pbu.safe_zip(body_joints, component_joints))
 
     def get_component_joints(self, group, **kwargs):
         mapping = self.get_component_mapping(group, **kwargs)
@@ -819,13 +758,13 @@ class PandaRobot:
         return fn(self.body, self.get_group_joints(group, **kwargs))
 
     def get_group_subtree(self, group, **kwargs):
-        return get_link_subtree(
+        return pbu.get_link_subtree(
             self.body, self.get_group_parent(group, **kwargs), **kwargs
         )
 
     def get_component(self, group, visual=True, **kwargs):
         if group not in self.components:
-            component = clone_body(
+            component = pbu.clone_body(
                 self.body,
                 links=self.get_group_subtree(group, **kwargs),
                 visual=False,
@@ -833,23 +772,23 @@ class PandaRobot:
                 **kwargs,
             )
             if not visual:
-                set_all_color(component, TRANSPARENT)
+                pbu.set_all_color(component, TRANSPARENT)
             self.components[group] = component
         return self.components[group]
 
     def remove_components(self, **kwargs):
         for component in self.components.values():
-            remove_body(component, **kwargs)
+            pbu.remove_body(component, **kwargs)
         self.components = {}
 
 
-class WorldState(State):
+class WorldState(pbu.State):
     def __init__(self, savers=[], attachments={}, client=None):
         # a part of the state separate from PyBullet
         # TODO: other fluent things
         super(WorldState, self).__init__(attachments)
         self.attachments = attachments
-        self.world_saver = WorldSaver(client=client)
+        self.world_saver = pbu.WorldSaver(client=client)
         self.savers = tuple(savers)
         self.client = client
 
@@ -925,16 +864,16 @@ PREGRASP_DISTANCE = 0.05
 
 def get_pregrasp(
     grasp_tool,
-    gripper_from_tool=unit_pose(),
+    gripper_from_tool=pbu.unit_pose(),
     tool_distance=PREGRASP_DISTANCE,
     object_distance=PREGRASP_DISTANCE,
 ):
     # TODO: rename to approach, standoff, guarded, ...
-    return multiply(
+    return pbu.multiply(
         gripper_from_tool,
-        Pose(Point(x=tool_distance)),
+        pbu.Pose(pbu.Point(x=tool_distance)),
         grasp_tool,
-        Pose(Point(z=-object_distance)),
+        pbu.Pose(pbu.Point(z=-object_distance)),
     )
 
 
@@ -957,7 +896,7 @@ class Grasp(object):  # RelativePose
         return self.pregrasp
 
     def create_relative_pose(
-        self, robot, link=BASE_LINK, **kwargs
+        self, robot, link=pbu.BASE_LINK, **kwargs
     ):  # create_attachment
         parent = ParentBody(body=robot, link=link, **kwargs)
         return RelativePose(
@@ -974,7 +913,7 @@ class Grasp(object):  # RelativePose
 
 
 class ParentBody(object):  # TODO: inherit from Shape?
-    def __init__(self, body=None, link=BASE_LINK, **kwargs):
+    def __init__(self, body=None, link=pbu.BASE_LINK, **kwargs):
         self.body = body
         self.link = link
 
@@ -983,9 +922,100 @@ class ParentBody(object):  # TODO: inherit from Shape?
 
     def get_pose(self, **kwargs):
         if self.body is None:
-            return unit_pose()
-        return get_link_pose(self.body, self.link, **kwargs)
+            return pbu.unit_pose()
+        return pbu.get_link_pose(self.body, self.link, **kwargs)
 
     # TODO: hash & equals by extending tuple
     def __repr__(self):
         return "Parent({})".format(self.body)
+
+
+def extract_normal(mesh, index):
+    return np.array(mesh.face_normals[index, :])
+
+
+def mesh_from_obj(obj, use_concave=True, client=None, **kwargs) -> pbu.Mesh:
+    # PyBullet creates multiple collision elements (with unknown_file) when nonconvex
+    [data] = pbu.get_visual_data(obj, -1, client=client)
+    filename = pbu.get_data_filename(data)
+    if use_concave:
+        filename = filename.replace("vhacd_", "")
+    scale = pbu.get_data_scale(data)
+    if filename == pbu.UNKNOWN_FILE:
+        raise RuntimeError(filename)
+    elif filename == "":
+        # Unknown mesh, approximate with bounding box
+        aabb = pbu.get_aabb(obj, client=client)
+        aabb_center = pbu.get_aabb_center(aabb)
+        centered_aabb = pbu.AABB(
+            lower=aabb.lower - aabb_center, upper=aabb.upper - aabb_center
+        )
+        mesh = pbu.mesh_from_points(pbu.get_aabb_vertices(centered_aabb))
+    else:
+        mesh = pbu.read_obj(filename, decompose=False)
+
+    vertices = [scale * np.array(vertex) for vertex in mesh.vertices]
+    vertices = pbu.tform_points(pbu.get_data_pose(data), vertices)
+    return pbu.Mesh(vertices, mesh.faces)
+
+
+ASSET_PATH = "./models"
+
+
+def get_absolute_pose(base_pose, action):
+    rx = base_pose[0][0] + action.pose[0][0]
+    ry = base_pose[0][1] + action.pose[0][1]
+    rz = base_pose[0][2] + action.pose[0][2]
+    pose = ([rx, ry, rz], action.pose[1])
+    return pose
+
+
+def check_collision(state, action, client=None):
+    assert client is not None
+    target_pose = state.block_poses[state.block_ids.index(action.target_block)]
+    src_pose = get_absolute_pose(target_pose, action)
+
+    pbu.set_pose(action.grasp_block, src_pose, client=client)
+    for block, block_pose in zip(state.block_ids, state.block_poses):
+        if block != action.grasp_block:
+            pbu.set_pose(block, block_pose, client=client)
+            if pbu.pairwise_collision(action.grasp_block, block, client=client):
+                return True
+    return False
+
+
+def create_pybullet_block(
+    color, half_extents, mass, friction, restitution, orientation, client=None
+):
+    """A generic utility for creating a new block.
+
+    Returns the PyBullet ID of the newly created block.
+    """
+    # The poses here are not important because they are overwritten by
+    # the state values when a task is reset.
+    pose = (0, 0, 0)
+
+    # Create the collision shape.
+    collision_id = client.createCollisionShape(p.GEOM_BOX, halfExtents=half_extents)
+
+    # Create the visual_shape.
+    visual_id = client.createVisualShape(
+        p.GEOM_BOX, halfExtents=half_extents, rgbaColor=color
+    )
+
+    # Create the body.
+    block_id = client.createMultiBody(
+        baseMass=mass,
+        baseCollisionShapeIndex=collision_id,
+        baseVisualShapeIndex=visual_id,
+        basePosition=pose,
+        baseOrientation=orientation,
+    )
+    client.changeDynamics(
+        block_id, linkIndex=-1, lateralFriction=friction  # -1 for the base
+    )
+    client.changeDynamics(
+        block_id, linkIndex=-1, restitution=restitution  # -1 for the base
+    )
+
+    return block_id

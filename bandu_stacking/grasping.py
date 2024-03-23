@@ -9,47 +9,7 @@ import numpy as np
 import trimesh
 from trimesh.ray.ray_triangle import RayMeshIntersector
 
-from bandu_stacking.pb_utils import (
-    AABB,
-    RED,
-    UNKNOWN_FILE,
-    Euler,
-    Mesh,
-    Point,
-    Pose,
-    PoseSaver,
-    add_line,
-    angle_between,
-    convex_combination,
-    euler_from_quat,
-    get_aabb,
-    get_aabb_center,
-    get_aabb_vertices,
-    get_data_filename,
-    get_data_pose,
-    get_data_scale,
-    get_distance,
-    get_length,
-    get_pose,
-    get_time_step,
-    get_unit_vector,
-    get_visual_data,
-    get_yaw,
-    invert,
-    mesh_from_points,
-    multiply,
-    multiply_quats,
-    pairwise_collision,
-    quat_from_euler,
-    quat_from_matrix,
-    read_obj,
-    remove_handles,
-    set_pose,
-    single_collision,
-    tform_point,
-    tform_points,
-    unit_pose,
-)
+import bandu_stacking.pb_utils as pbu
 
 X_AXIS = np.array([1, 0, 0])  # TODO: make immutable
 Z_AXIS = np.array([0, 0, 1])
@@ -81,13 +41,13 @@ def get_plane_quat(normal):
     plane = Plane(normal, np.zeros(3))
     normal, origin = plane
     tform = np.linalg.inv(plane_transform(origin, -normal))  # origin=None
-    quat1 = quat_from_matrix(tform)
-    pose1 = Pose(origin, euler=euler_from_quat(quat1))
+    quat1 = pbu.quat_from_matrix(tform)
+    pose1 = pbu.Pose(origin, euler=pbu.euler_from_quat(quat1))
 
     projection_world = project_plane(plane, Z_AXIS)
-    projection = tform_point(invert(pose1), projection_world)
-    yaw = get_yaw(projection[:2])
-    quat2 = multiply_quats(quat1, quat_from_euler(Euler(yaw=yaw)))
+    projection = pbu.tform_point(pbu.invert(pose1), projection_world)
+    yaw = pbu.get_yaw(projection[:2])
+    quat2 = pbu.multiply_quats(quat1, pbu.quat_from_euler(pbu.Euler(yaw=yaw)))
 
     return quat2
 
@@ -123,14 +83,14 @@ def control_until_contact(
         for output in controller:
             yield output
         return
-    dt = get_time_step()
+    dt = pbu.get_time_step()
     countdown = np.inf
     for output in controller:  # TODO: force control for grasping
         if countdown <= 0.0:
             break
 
         if (countdown == np.inf) and agg(
-            single_collision(body, link=link) for link in contact_links
+            pbu.single_collision(body, link=link) for link in contact_links
         ):  # any | all
             # (time_after_contact != np.inf) and contact_links
             countdown = time_after_contact
@@ -147,37 +107,37 @@ def control_until_contact(
 ##################################################
 
 
-def get_grasp(grasp_tool, gripper_from_tool=unit_pose()):
-    return multiply(gripper_from_tool, grasp_tool)
+def get_grasp(grasp_tool, gripper_from_tool=pbu.unit_pose()):
+    return pbu.multiply(gripper_from_tool, grasp_tool)
 
 
 def get_pregrasp(
     grasp_tool,
-    gripper_from_tool=unit_pose(),
+    gripper_from_tool=pbu.unit_pose(),
     tool_distance=PREGRASP_DISTANCE,
     object_distance=PREGRASP_DISTANCE,
 ):
     # TODO: rename to approach, standoff, guarded, ...
-    return multiply(
+    return pbu.multiply(
         gripper_from_tool,
-        Pose(Point(x=tool_distance)),
+        pbu.Pose(pbu.Point(x=tool_distance)),
         grasp_tool,
-        Pose(Point(z=-object_distance)),
+        pbu.Pose(pbu.Point(z=-object_distance)),
     )
 
 
 def get_postgrasp(
     grasp_tool,
-    gripper_from_tool=unit_pose(),
+    gripper_from_tool=pbu.unit_pose(),
     tool_distance=-POSTGRASP_DISTANCE,
     object_distance=-POSTGRASP_DISTANCE,
 ):
     # TODO: rename to approach, standoff, guarded, ...
-    return multiply(
+    return pbu.multiply(
         gripper_from_tool,
-        Pose(Point(x=tool_distance)),
+        pbu.Pose(pbu.Point(x=tool_distance)),
         grasp_tool,
-        Pose(Point(z=-object_distance)),
+        pbu.Pose(pbu.Point(z=-object_distance)),
     )
 
 
@@ -188,21 +148,20 @@ def filter_grasps(
     gripper,
     obj,
     grasp_generator,
-    gripper_from_tool=unit_pose(),
+    gripper_from_tool=pbu.unit_pose(),
     obstacles=[],
-    draw=False,
     **kwargs,
 ):
-    obj_pose = get_pose(obj)
+    obj_pose = pbu.get_pose(obj)
     for grasp_tool in grasp_generator:
         if grasp_tool is None:
             continue
-        grasp_pose = multiply(
-            obj_pose, invert(get_grasp(grasp_tool, gripper_from_tool))
+        grasp_pose = pbu.multiply(
+            obj_pose, pbu.invert(get_grasp(grasp_tool, gripper_from_tool))
         )
-        with PoseSaver(gripper):
-            set_pose(gripper, grasp_pose)  # grasp_pose | pregrasp_pose
-            if any(pairwise_collision(gripper, obst) for obst in [obj] + obstacles):
+        with pbu.PoseSaver(gripper):
+            pbu.set_pose(gripper, grasp_pose)  # grasp_pose | pregrasp_pose
+            if any(pbu.pairwise_collision(gripper, obst) for obst in [obj] + obstacles):
                 continue
             yield grasp_tool
 
@@ -212,28 +171,28 @@ def filter_grasps(
 
 def mesh_from_obj(obj, use_concave=True, client=None, **kwargs):
     # PyBullet creates multiple collision elements (with unknown_file) when nonconvex
-    [data] = get_visual_data(obj, -1, client=client)
-    filename = get_data_filename(data)
+    [data] = pbu.get_visual_data(obj, -1, client=client)
+    filename = pbu.get_data_filename(data)
     if use_concave:
         filename = filename.replace("textured", "textured_vhacd")
 
-    scale = get_data_scale(data)
-    if filename == UNKNOWN_FILE:
+    scale = pbu.get_data_scale(data)
+    if filename == pbu.UNKNOWN_FILE:
         raise RuntimeError(filename)
     elif filename == "":
         # Unknown mesh, approximate with bounding box
-        aabb = get_aabb(obj, client=client)
-        aabb_center = get_aabb_center(aabb)
-        centered_aabb = AABB(
+        aabb = pbu.get_aabb(obj, client=client)
+        aabb_center = pbu.get_aabb_center(aabb)
+        centered_aabb = pbu.AABB(
             lower=aabb.lower - aabb_center, upper=aabb.upper - aabb_center
         )
-        mesh = mesh_from_points(get_aabb_vertices(centered_aabb))
+        mesh = pbu.mesh_from_points(pbu.get_aabb_vertices(centered_aabb))
     else:
-        mesh = read_obj(filename, decompose=False)
+        mesh = pbu.read_obj(filename, decompose=False)
 
     vertices = [scale * np.array(vertex) for vertex in mesh.vertices]
-    vertices = tform_points(get_data_pose(data), vertices)
-    return Mesh(vertices, mesh.faces)
+    vertices = pbu.tform_points(pbu.get_data_pose(data), vertices)
+    return pbu.Mesh(vertices, mesh.faces)
 
 
 def extract_normal(mesh, index):
@@ -244,15 +203,12 @@ def sample_grasp(
     obj,
     point1,
     point2,
-    normal1,
-    normal2,
     pitches=[-np.pi, np.pi],
     discrete_pitch=False,
     finger_length=FINGER_LENGTH,
-    draw=False,
     **kwargs,
 ):
-    grasp_point = convex_combination(point1, point2)
+    grasp_point = pbu.convex_combination(point1, point2)
     direction2 = point2 - point1
     quat = get_plane_quat(direction2)  # Biases toward the smallest rotation to align
     pitches = sorted(pitches)
@@ -265,18 +221,20 @@ def sample_grasp(
             pitch = random.uniform(*pitch_range)
         roll = random.choice([0, np.pi])
 
-        grasp_quat = multiply_quats(
+        grasp_quat = pbu.multiply_quats(
             quat,
-            quat_from_euler(Euler(roll=np.pi / 2)),
-            quat_from_euler(
-                Euler(pitch=np.pi + pitch)
+            pbu.quat_from_euler(pbu.Euler(roll=np.pi / 2)),
+            pbu.quat_from_euler(
+                pbu.Euler(pitch=np.pi + pitch)
             ),  # TODO: local pitch or world pitch?
-            quat_from_euler(Euler(roll=roll)),  # Switches fingers
+            pbu.quat_from_euler(pbu.Euler(roll=roll)),  # Switches fingers
         )
-        grasp_pose = Pose(grasp_point, euler_from_quat(grasp_quat))
-        grasp_pose = multiply(grasp_pose, Pose(Point(x=finger_length)))  # FINGER_LENGTH
+        grasp_pose = pbu.Pose(grasp_point, pbu.euler_from_quat(grasp_quat))
+        grasp_pose = pbu.multiply(
+            grasp_pose, pbu.Pose(pbu.Point(x=finger_length))
+        )  # FINGER_LENGTH
 
-        yield invert(
+        yield pbu.invert(
             grasp_pose
         ), []  # TODO: tool_from_grasp or grasp_from_tool convention?
 
@@ -304,7 +262,7 @@ def combine_scores(score, *scores):
 
 
 def score_width(point1, point2):
-    return -get_distance(point1, point2)  # Priorities small widths
+    return -pbu.get_distance(point1, point2)  # Priorities small widths
 
 
 def score_antipodal(error1, error2):
@@ -313,8 +271,8 @@ def score_antipodal(error1, error2):
 
 def score_torque(mesh, tool_from_grasp, **kwargs):
     center_mass = mesh.center_mass
-    x, _, z = tform_point(tool_from_grasp, center_mass)  # Distance in xz plane
-    return -get_length([x, z])
+    x, _, z = pbu.tform_point(tool_from_grasp, center_mass)  # Distance in xz plane
+    return -pbu.get_length([x, z])
 
 
 def score_overlap(
@@ -329,7 +287,7 @@ def score_overlap(
 ):
     handles = []
     if draw:
-        handles.append(add_line(point1, point2, color=RED))
+        handles.append(pbu.add_line(point1, point2, color=pbu.RED))
     midpoint = np.average([point1, point2], axis=0)
     direction1 = point1 - point2
     direction2 = point2 - point1
@@ -343,20 +301,20 @@ def score_overlap(
             d=3
         )  # TODO: sample rectangle for the PR2's fingers
         orthogonal_direction = np.cross(
-            get_unit_vector(direction1), other_direction
+            pbu.get_unit_vector(direction1), other_direction
         )  # TODO: deterministic
-        orthogonal_direction = radius * get_unit_vector(orthogonal_direction)
+        orthogonal_direction = radius * pbu.get_unit_vector(orthogonal_direction)
         origin = midpoint + orthogonal_direction
         origins.append(origin)
         # print(get_distance(midpoint, origin))
         if draw:
-            handles.append(add_line(midpoint, origin, color=RED))
+            handles.append(pbu.add_line(midpoint, origin, color=pbu.RED))
     rays = list(range(len(origins)))
 
     direction_differences = []
     for direction in [direction1, direction2]:
         point = midpoint + direction / 2.0
-        contact_distance = get_distance(midpoint, point)
+        contact_distance = pbu.get_distance(midpoint, point)
 
         # section, slice_plane
         results = intersector.intersects_id(
@@ -374,9 +332,9 @@ def score_overlap(
             if ray in intersections_from_ray:
                 face, location = min(
                     intersections_from_ray[ray],
-                    key=lambda pair: get_distance(point, pair[-1]),
+                    key=lambda pair: pbu.get_distance(point, pair[-1]),
                 )
-                distance = get_distance(origins[ray], location)
+                distance = pbu.get_distance(origins[ray], location)
                 difference = abs(contact_distance - distance)
                 # normal = extract_normal(mesh, face) # TODO: use the normal for lexiographic scoring
             else:
@@ -419,7 +377,7 @@ def generate_mesh_grasps(
     score_type="combined",
     **kwargs,
 ):
-    target_vector = get_unit_vector(Z_AXIS)
+    target_vector = pbu.get_unit_vector(Z_AXIS)
 
     pb_mesh = mesh_from_obj(obj, **kwargs)
     # handles = draw_mesh(Mesh(vertices, faces))
@@ -427,7 +385,7 @@ def generate_mesh_grasps(
     mesh = trimesh.Trimesh(pb_mesh.vertices, pb_mesh.faces)
     mesh.fix_normals()
 
-    aabb = AABB(*mesh.bounds)
+    aabb = pbu.AABB(*mesh.bounds)
     surface_z = aabb.lower[2]
     min_z = surface_z + z_threshold
     intersector = RayMeshIntersector(mesh)
@@ -447,31 +405,32 @@ def generate_mesh_grasps(
 
         if any(point[2] < min_z for point in [point1, point2]):
             continue
-        distance = get_distance(point1, point2)
+        distance = pbu.get_distance(point1, point2)
         if (distance > max_width) or (distance < 1e-3):
             continue
         direction2 = point2 - point1
-        if abs(angle_between(target_vector, direction2) - np.pi / 2) > target_tolerance:
+        if (
+            abs(pbu.angle_between(target_vector, direction2) - np.pi / 2)
+            > target_tolerance
+        ):
             continue
 
         normal1 = extract_normal(mesh, index1)
         if normal1.dot(-direction2) < 0:
             normal1 *= -1
-        error1 = angle_between(normal1, -direction2)
+        error1 = pbu.angle_between(normal1, -direction2)
 
         normal2 = extract_normal(mesh, index2)
         if normal2.dot(direction2) < 0:
             normal2 *= -1
-        error2 = angle_between(normal2, direction2)
+        error2 = pbu.angle_between(normal2, direction2)
 
         if (error1 > antipodal_tolerance) or (error2 > antipodal_tolerance):
             continue
 
         # TODO: average the normals to select a new pair of contact points
 
-        tool_from_grasp, handles = next(
-            sample_grasp(obj, point1, point2, normal1, normal2, **kwargs)
-        )
+        tool_from_grasp, handles = next(sample_grasp(obj, point1, point2, **kwargs))
 
         assert score_type == "combined"
 
@@ -482,7 +441,7 @@ def generate_mesh_grasps(
         yield ScoredGrasp(tool_from_grasp, point1, point2, score)
 
         last_attempts = 0
-        remove_handles(handles, **kwargs)
+        pbu.remove_handles(handles, **kwargs)
 
 
 ##################################################
