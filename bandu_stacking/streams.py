@@ -1,3 +1,5 @@
+from __future__ import print_function
+
 import math
 import random
 import time
@@ -27,17 +29,12 @@ from bandu_stacking.samplers import (
 )
 
 TOOL_POSE = pbu.Pose(point=pbu.Point(x=0.00), euler=pbu.Euler(pitch=np.pi / 2))
-
-SWITCH_BEFORE = "grasp"  # contact | grasp | pregrasp | arm | none # TODO: tractor
 BASE_COST = 1
 PROXIMITY_COST_TERM = False
 REORIENT = False
 RELAX_GRASP_COLLISIONS = False
 GRASP_EXPERIMENT = False
-
 GEOMETRIC_MODES = ["top", "side", "mesh"]
-LEARNED_MODES = ["gpd", "graspnet"]
-MODE_ORDERS = ["", "_random", "_best"]
 
 
 def z_plane(z=0.0):
@@ -130,8 +127,6 @@ def get_grasp_gen_fn(
     **kwargs,
 ):
     grasp_mode = grasp_mode.split("_")[0]
-    if grasp_mode in LEARNED_MODES:
-        gripper_collisions = False
 
     def gen_fn(obj, obj_aabb, obj_pose):
         pbu.link_from_name(robot, PANDA_TOOL_TIP, **kwargs)
@@ -231,11 +226,7 @@ def get_grasp_gen_fn(
             )
 
             closed_position = closed_conf[0]
-
-            if SWITCH_BEFORE in ["contact", "grasp"]:
-                closed_position = (1 + closed_fraction) * closed_position
-            else:
-                closed_position = closed_conf[0]
+            closed_position = (1 + closed_fraction) * closed_position
 
             grasp = Grasp(obj, grasp_pose, closed_position=closed_position, **kwargs)
             print("Generated grasp after {} attempts".format(last_attempts))
@@ -251,8 +242,6 @@ def get_plan_pick_fn(robot, environment=[], **kwargs):
     environment = environment
 
     def fn(obj, pose, grasp, base_conf):
-        # TODO: generator instead of a function
-        # TODO: add the ancestors as collision obstacles
         robot_saver.restore()
         base_conf.assign(**kwargs)
         arm_path = plan_prehensile(
@@ -295,20 +284,7 @@ def get_plan_pick_fn(robot, environment=[], **kwargs):
             ),
         )
 
-        # TODO: close the gripper a little bit before pregrasp
-        if SWITCH_BEFORE == "contact":
-            commands = [arm_traj, switch, arm_traj.reverse(**kwargs)]
-        elif SWITCH_BEFORE == "grasp":
-            commands = [arm_traj, switch, gripper_traj, arm_traj.reverse(**kwargs)]
-        elif SWITCH_BEFORE == "pregrasp":
-            commands = [arm_traj, gripper_traj, switch, arm_traj.reverse(**kwargs)]
-        elif SWITCH_BEFORE == "arm":
-            commands = [arm_traj, gripper_traj, arm_traj.reverse(**kwargs), switch]
-        elif SWITCH_BEFORE == "none":
-            commands = [arm_traj, gripper_traj, arm_traj.reverse(**kwargs)]
-        else:
-            raise NotImplementedError(SWITCH_BEFORE)
-
+        commands = [arm_traj, switch, gripper_traj, arm_traj.reverse(**kwargs)]
         sequence = Sequence(commands=commands, name="pick-{}".format(obj))
         return (arm_conf, sequence)
 
@@ -343,7 +319,7 @@ def get_plan_place_fn(robot, environment=[], **kwargs):
         )
         arm_conf = arm_traj.first()
 
-        closed_conf, open_conf = robot.get_group_limits(GRIPPER_GROUP, **kwargs)
+        _, open_conf = robot.get_group_limits(GRIPPER_GROUP, **kwargs)
         gripper_traj = GroupTrajectory(
             robot,
             GRIPPER_GROUP,
@@ -353,20 +329,9 @@ def get_plan_place_fn(robot, environment=[], **kwargs):
         )
         switch = Switch(obj, parent=None)
 
-        # TODO: wait for a bit and remove colliding objects
-        if SWITCH_BEFORE == "contact":
-            commands = [arm_traj, switch, arm_traj.reverse(**kwargs)]
-        elif SWITCH_BEFORE == "grasp":
-            commands = [arm_traj, gripper_traj, switch, arm_traj.reverse(**kwargs)]
-        elif SWITCH_BEFORE == "pregrasp":
-            commands = [arm_traj, switch, gripper_traj, arm_traj.reverse(**kwargs)]
-        elif SWITCH_BEFORE == "arm":
-            commands = [switch, arm_traj, gripper_traj, arm_traj.reverse(**kwargs)]
-        elif SWITCH_BEFORE == "none":
-            commands = [arm_traj, gripper_traj, arm_traj.reverse(**kwargs)]
-        else:
-            raise NotImplementedError(SWITCH_BEFORE)
+        commands = [arm_traj, gripper_traj, switch, arm_traj.reverse(**kwargs)]
         sequence = Sequence(commands=commands, name="place-{}".format(obj))
+
         return (arm_conf, sequence)
 
     return fn
@@ -470,7 +435,6 @@ def get_plan_motion_fn(
             q2.joints,
             q2.positions,
             resolutions=resolutions,
-            # weights=weights, # TODO: joint weights
             obstacles=obstacles,
             attachments=attachments,
             self_collisions=SELF_COLLISIONS,

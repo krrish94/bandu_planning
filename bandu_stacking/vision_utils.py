@@ -1,3 +1,5 @@
+from __future__ import print_function
+
 import copy
 import os
 from collections import OrderedDict

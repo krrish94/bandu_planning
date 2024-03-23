@@ -1,4 +1,4 @@
-from __future__ import annotations
+from __future__ import print_function
 
 import os
 from enum import IntEnum

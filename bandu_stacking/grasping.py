@@ -54,8 +54,6 @@ def get_plane_quat(normal):
 
 PREGRASP_DISTANCE = 0.05  # 0.05 | 0.07
 POSTGRASP_DISTANCE = 0.005  # 0.05 | 0.07
-
-# FINGER_LENGTH = PR2_FINGER_DIMENSIONS[1] / 2.
 FINGER_LENGTH = 0.0  # 0. | 0.01 | 0.015 | 0.02
 
 ScoredGrasp = namedtuple("ScoredGrasp", ["pose", "contact1", "contact2", "score"])

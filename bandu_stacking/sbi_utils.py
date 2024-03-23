@@ -1,3 +1,5 @@
+from __future__ import print_function
+
 """Helper functions for simulation-based inference (SBI) using the sbi
 toolbox."""
 
