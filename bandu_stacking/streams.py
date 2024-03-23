@@ -122,7 +122,7 @@ def get_grasp_gen_fn(
     grasp_mode="mesh",
     gripper_collisions=True,
     closed_fraction=5e-2,
-    max_time=60,
+    max_time=5,
     max_attempts=np.inf,
     **kwargs,
 ):
@@ -151,7 +151,7 @@ def get_grasp_gen_fn(
         )
         last_time = time.time()
         last_attempts = 0
-        while True:  # TODO: filter_grasps
+        while time.time()-last_time < max_time:  # TODO: filter_grasps
             grasp_pose = next(generator)  # TODO: store past grasps
             print(grasp_pose)
             if (
@@ -159,13 +159,6 @@ def get_grasp_gen_fn(
                 or (pbu.elapsed_time(last_time) >= max_time)
                 or (last_attempts >= max_attempts)
             ):
-                if gripper_width == max_width:
-                    print(
-                        "Grasps for {} timed out after {} attempts and {:.3f} seconds".format(
-                            obj, last_attempts, pbu.elapsed_time(last_time)
-                        )
-                    )
-                    return
                 gripper_width = max_width
                 if RELAX_GRASP_COLLISIONS:
                     enable_collisions = (

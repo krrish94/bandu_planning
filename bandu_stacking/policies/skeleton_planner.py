@@ -3,6 +3,7 @@ from __future__ import print_function
 import math
 import random
 from collections import defaultdict
+import sys
 
 import numpy as np
 import trimesh
@@ -178,7 +179,7 @@ class SkeletonPlanner(Policy):
         return max([get_height(obj) for obj in initial_state.block_ids])
 
     def sample_constrained_action(
-        self, source_obj, target_obj, mesh_info, best_face=False
+        self, state, source_obj, target_obj, mesh_info, best_face=False, **kwargs
     ):
         """Sample a pick and place action with the source object on the target
         object."""
@@ -214,7 +215,13 @@ class SkeletonPlanner(Policy):
 
         x_offset = random.uniform(-self.env.offset_size, self.env.offset_size)
         y_offset = random.uniform(-self.env.offset_size, self.env.offset_size)
-        pose = [(x_offset, y_offset, self.env.block_size + 0.01), r]
+
+        pbu.set_pose(source_obj, [pbu.unit_point(), r], **kwargs)
+        pbu.set_pose(target_obj, state.block_poses[state.block_ids.index(target_obj)], **kwargs)
+        ae1 = pbu.get_aabb_extent(pbu.get_aabb(source_obj, **kwargs))
+        ae2 = pbu.get_aabb(target_obj, **kwargs)
+        pose = [(x_offset, y_offset, ae2.upper[2]+ae1[2]/2.0 + 0.01), r]
+
         return Action(source_obj, target_obj, pose)
 
     def get_plan_skeletons(self, initial_state, mesh_info, num_skeletons=1000):
@@ -242,8 +249,7 @@ class SkeletonPlanner(Policy):
         strategy = "random"  # other choices: "bottom_area", "eccentricity", "face_area"
         # strategy = "bottom_area"
         # strategy = "eccentricity"
-
-        print("In get_plan_skeletons")
+        print("[Planner] get_plan_skeletons")
 
         if strategy == "random":
             plan_skeletons = []
@@ -274,7 +280,7 @@ class SkeletonPlanner(Policy):
                     source_object = random.choice(source_options)
 
                     action = self.sample_constrained_action(
-                        source_object, target_object, mesh_info
+                        state, source_object, target_object, mesh_info, client=self.env.client
                     )
                     if check_collision(state, action, client=self.env.client):
                         collision = True
@@ -496,12 +502,15 @@ class SkeletonPlanner(Policy):
                         concrete_plan.append(action)
 
                 if not fail:
+                    pbu.wait_if_gui("Run CSP to construct the following tower?", client=self.env.client)
                     self.env.set_sim_state(initial_state)
                     return concrete_plan
 
     def get_action(self, initial_state):
         if self.plan == None:
             abstract_actions = self.get_plan(initial_state)
+            if(abstract_actions is None):
+                print("[Planner] There does not exist a physically plausible tower")
             current_state = initial_state
             self.plan = []
             for aai, aa in enumerate(abstract_actions):
@@ -513,8 +522,6 @@ class SkeletonPlanner(Policy):
                 sequence = get_pick_place_plan(aa, env=self.env)
                 if sequence is None:
                     print("[Planner] Skeleton CSP failed")
-                    import sys
-
                     sys.exit()
                 else:
                     self.plan.append(sequence)

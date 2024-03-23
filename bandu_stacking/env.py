@@ -242,7 +242,7 @@ class StackingEnvironment:
         bandu_filenames = [
             f for f in listdir(bandu_model_path) if isfile(join(bandu_model_path, f))
         ]
-        bandu_urdfs = [f for f in bandu_filenames if f.endswith("urdf")]
+        bandu_urdfs = [f for f in bandu_filenames if f.endswith("urdf") and "original" not in f]
         for i in range(self.num_blocks):
             bandu_urdf = os.path.join(bandu_model_path, random.choice(bandu_urdfs))
             obj = self.client.loadURDF(bandu_urdf, globalScaling=0.002)
