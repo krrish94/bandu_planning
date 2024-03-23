@@ -2569,6 +2569,7 @@ def uniform_generator(d):
     while True:
         yield np.random.uniform(size=d)
 
+
 def unit_generator(d, **kwargs):
     return uniform_generator(d)
 

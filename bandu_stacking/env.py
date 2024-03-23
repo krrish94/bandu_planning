@@ -29,11 +29,11 @@ from bandu_stacking.pb_utils import (
     pairwise_collision,
     set_pose,
     wait_for_duration,
-    wait_if_gui
+    wait_if_gui,
 )
 from bandu_stacking.policies.policy import State
+from bandu_stacking.realsense_utils import CALIB_DIR, CAMERA_SNS, get_camera_image
 from bandu_stacking.vision_utils import UCN, fuse_predicted_labels, save_camera_images
-from bandu_stacking.realsense_utils import get_camera_image, CAMERA_SNS, CALIB_DIR
 
 TABLE_AABB = AABB(
     lower=(-1.53 / 2.0, -1.22 / 2.0, -0.03 / 2.0),
@@ -118,6 +118,7 @@ def add_table(
     assert len(workspace) == 4 + 4  # 1 table, 4 posts, 4 beams
     return table, workspace
 
+
 class StackingEnvironment:
     def __init__(
         self,
@@ -128,7 +129,7 @@ class StackingEnvironment:
         real_camera=False,
         real_execute=False,
     ):
-        
+
         self.num_blocks = num_blocks
         self.object_set = object_set
         self.disable_robot = disable_robot
@@ -185,14 +186,19 @@ class StackingEnvironment:
 
         self.block_size = 0.045
         if self.real_camera:
-            self.seg_network = UCN(base_path=os.path.join(os.path.dirname(__file__), "ucn"))
+            self.seg_network = UCN(
+                base_path=os.path.join(os.path.dirname(__file__), "ucn")
+            )
 
             for camera_sn in CAMERA_SNS:
-                base_T_camera = np.load(os.path.join(CALIB_DIR, f"{camera_sn}/pose.npy"))
+                base_T_camera = np.load(
+                    os.path.join(CALIB_DIR, f"{camera_sn}/pose.npy")
+                )
                 camera_image = get_camera_image(camera_sn, base_T_camera)
-                camera_image = fuse_predicted_labels(self.seg_network, camera_image, use_depth=True)
+                camera_image = fuse_predicted_labels(
+                    self.seg_network, camera_image, use_depth=True
+                )
                 save_camera_images(camera_image)
-            
 
         elif object_set == "blocks":
             for i in range(self.num_blocks):

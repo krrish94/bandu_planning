@@ -255,13 +255,16 @@ def plan_prehensile(robot, obj, pose, grasp, environment=[], **kwargs):
     pose.assign(**kwargs)
     gripper_path = compute_gripper_path(pose, grasp)  # grasp -> pregrasp
     gripper_waypoints = gripper_path[:1] + gripper_path[-1:]
-    if workspace_collision(robot, gripper_path, grasp=None, obstacles=obstacles, **kwargs):
+    if workspace_collision(
+        robot, gripper_path, grasp=None, obstacles=obstacles, **kwargs
+    ):
         return None
     create_grasp_attachment(robot, grasp, **kwargs)
     arm_path = plan_workspace_motion(
         robot, gripper_waypoints, attachment=None, obstacles=obstacles, **kwargs
     )
     return arm_path
+
 
 def set_closed_positions(robot, **kwargs):
     closed_conf, _ = robot.get_group_limits(GRIPPER_GROUP, **kwargs)

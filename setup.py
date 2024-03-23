@@ -24,6 +24,6 @@ setup(
         "easydict==1.13",
         "torchvision==0.17.1",
         "opencv-python==4.9.0.80",
-        "pyrealsense2==2.54.2.5684"
+        "pyrealsense2==2.54.2.5684",
     ],
 )

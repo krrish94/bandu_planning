@@ -2,32 +2,34 @@
 # This work is licensed under the NVIDIA Source Code License - Non-commercial. Full
 # text can be found in LICENSE.md
 
-import torch
+import os
+import sys
 import time
-import sys, os
-import numpy as np
+
 import cv2
 import matplotlib.pyplot as plt
+import numpy as np
+import torch
+
 from bandu_stacking.ucn.lib.fcn.config import cfg
 from bandu_stacking.ucn.lib.utils.mask import visualize_segmentation
 
 
 def normalize_descriptor(res, stats=None):
-    """
-    Normalizes the descriptor into RGB color space
-    :param res: numpy.array [H,W,D]
-        Output of the network, per-pixel dense descriptor
-    :param stats: dict, with fields ['min', 'max', 'mean'], which are used to normalize descriptor
-    :return: numpy.array
-        normalized descriptor
+    """Normalizes the descriptor into RGB color space :param res: numpy.array
+    [H,W,D] Output of the network, per-pixel dense descriptor :param stats:
+
+    dict, with fields ['min', 'max', 'mean'], which are used to
+    normalize descriptor
+    :return: numpy.array normalized descriptor.
     """
 
     if stats is None:
         res_min = res.min()
         res_max = res.max()
     else:
-        res_min = np.array(stats['min'])
-        res_max = np.array(stats['max'])
+        res_min = np.array(stats["min"])
+        res_max = np.array(stats["max"])
 
     normed_res = np.clip(res, res_min, res_max)
     eps = 1e-10
@@ -42,7 +44,7 @@ def _vis_features(features, labels, rgb, intial_labels, selected_pixels=None):
     width = features.shape[3]
     fig = plt.figure()
     start = 1
-    m = np.ceil((num * 4 ) / 8.0)
+    m = np.ceil((num * 4) / 8.0)
     n = 8
     im_blob = rgb.cpu().numpy()
     for i in range(num):
@@ -58,10 +60,9 @@ def _vis_features(features, labels, rgb, intial_labels, selected_pixels=None):
             ax = fig.add_subplot(m, n, start)
             start += 1
             plt.imshow(im)
-            ax.set_title('image')
-            plt.axis('off')
-
-            '''
+            ax.set_title("image")
+            plt.axis("off")
+            """
             if selected_pixels is not None:
                 selected_indices = selected_pixels[i]
                 for j in range(len(selected_indices)):
@@ -69,7 +70,7 @@ def _vis_features(features, labels, rgb, intial_labels, selected_pixels=None):
                     y = index / width
                     x = index % width
                     plt.plot(x, y, 'ro', markersize=1.0)
-            '''
+            """
 
             im = torch.cuda.FloatTensor(height, width, 3)
             for j in range(3):
@@ -80,42 +81,51 @@ def _vis_features(features, labels, rgb, intial_labels, selected_pixels=None):
             ax = fig.add_subplot(m, n, start)
             start += 1
             plt.imshow(im)
-            ax.set_title('features')
-            plt.axis('off')
+            ax.set_title("features")
+            plt.axis("off")
 
             ax = fig.add_subplot(m, n, start)
             start += 1
             label = labels[i].detach().cpu().numpy()
             plt.imshow(label)
-            ax.set_title('labels')
-            plt.axis('off')
+            ax.set_title("labels")
+            plt.axis("off")
 
             ax = fig.add_subplot(m, n, start)
             start += 1
             label = intial_labels[i].detach().cpu().numpy()
             plt.imshow(label)
-            ax.set_title('intial labels')
-            plt.axis('off')
+            ax.set_title("intial labels")
+            plt.axis("off")
 
     plt.show()
 
 
-def _vis_minibatch_segmentation_final(image, depth, label, out_label=None, out_label_refined=None,
-    features=None, ind=None, selected_pixels=None, bbox=None):
-    
+def _vis_minibatch_segmentation_final(
+    image,
+    depth,
+    label,
+    out_label=None,
+    out_label_refined=None,
+    features=None,
+    ind=None,
+    selected_pixels=None,
+    bbox=None,
+):
+
     if image is not None:
         im_blob = image.cpu().numpy()
         num = im_blob.shape[0]
         height = im_blob.shape[2]
-        width = im_blob.shape[3]        
+        width = im_blob.shape[3]
     else:
-        im_blob = None    
+        im_blob = None
 
     if depth is not None:
         depth_blob = depth.cpu().numpy()
-        num = depth_blob.shape[0]        
+        num = depth_blob.shape[0]
         height = depth_blob.shape[2]
-        width = depth_blob.shape[3]        
+        width = depth_blob.shape[3]
     else:
         depth_blob = None
 
@@ -129,10 +139,10 @@ def _vis_minibatch_segmentation_final(image, depth, label, out_label=None, out_l
     m = 2
     n = 3
     for i in range(num):
-    
+
         fig = plt.figure()
-        start = 1    
-    
+        start = 1
+
         # image
         if im_blob is not None:
             im = im_blob[i, :3, :, :].copy()
@@ -144,8 +154,8 @@ def _vis_minibatch_segmentation_final(image, depth, label, out_label=None, out_l
             ax = fig.add_subplot(m, n, start)
             start += 1
             plt.imshow(im)
-            ax.set_title('image')
-            plt.axis('off')
+            ax.set_title("image")
+            plt.axis("off")
 
         # depth
         if depth is not None:
@@ -153,9 +163,9 @@ def _vis_minibatch_segmentation_final(image, depth, label, out_label=None, out_l
             ax = fig.add_subplot(m, n, start)
             start += 1
             plt.imshow(depth)
-            ax.set_title('depth')
-            plt.axis('off')
-            
+            ax.set_title("depth")
+            plt.axis("off")
+
         if im_blob is not None:
             im_vis = im
         else:
@@ -172,22 +182,22 @@ def _vis_minibatch_segmentation_final(image, depth, label, out_label=None, out_l
             ax = fig.add_subplot(m, n, start)
             start += 1
             plt.imshow(im_feature)
-            ax.set_title('feature map')
-            plt.axis('off')
+            ax.set_title("feature map")
+            plt.axis("off")
 
         # initial seeds
         if selected_pixels is not None:
             ax = fig.add_subplot(m, n, start)
             start += 1
             plt.imshow(im_vis)
-            ax.set_title('initial seeds')
-            plt.axis('off')
+            ax.set_title("initial seeds")
+            plt.axis("off")
             selected_indices = selected_pixels[i]
             for j in range(len(selected_indices)):
                 index = selected_indices[j]
                 y = index / width
                 x = index % width
-                plt.plot(x, y, 'ro', markersize=2.0)
+                plt.plot(x, y, "ro", markersize=2.0)
 
         # intial mask
         mask = out_label_blob[i, :, :]
@@ -195,8 +205,8 @@ def _vis_minibatch_segmentation_final(image, depth, label, out_label=None, out_l
         ax = fig.add_subplot(m, n, start)
         start += 1
         plt.imshow(im_label)
-        ax.set_title('initial label')
-        plt.axis('off')
+        ax.set_title("initial label")
+        plt.axis("off")
 
         # refined mask
         if out_label_refined is not None:
@@ -205,8 +215,8 @@ def _vis_minibatch_segmentation_final(image, depth, label, out_label=None, out_l
             ax = fig.add_subplot(m, n, start)
             start += 1
             plt.imshow(im_label)
-            ax.set_title('refined label')
-            plt.axis('off')
+            ax.set_title("refined label")
+            plt.axis("off")
         elif label is not None:
             # show gt label
             mask = label_blob[i, 0, :, :]
@@ -214,23 +224,32 @@ def _vis_minibatch_segmentation_final(image, depth, label, out_label=None, out_l
             ax = fig.add_subplot(m, n, start)
             start += 1
             plt.imshow(im_label)
-            ax.set_title('gt label')
-            plt.axis('off')
+            ax.set_title("gt label")
+            plt.axis("off")
 
         if ind is not None:
             mng = plt.get_current_fig_manager()
             mng.resize(*mng.window.maxsize())
             plt.pause(0.001)
             # plt.show(block=False)
-            filename = 'output/images/%06d.png' % ind
+            filename = "output/images/%06d.png" % ind
             fig.savefig(filename)
             plt.close()
         else:
             plt.show()
 
 
-def _vis_minibatch_segmentation(image, depth, label, out_label=None, out_label_refined=None,
-    features=None, ind=None, selected_pixels=None, bbox=None):
+def _vis_minibatch_segmentation(
+    image,
+    depth,
+    label,
+    out_label=None,
+    out_label_refined=None,
+    features=None,
+    ind=None,
+    selected_pixels=None,
+    bbox=None,
+):
 
     if depth is None:
         im_blob = image.cpu().numpy()
@@ -261,12 +280,11 @@ def _vis_minibatch_segmentation(image, depth, label, out_label=None, out_label_r
         im = im[:, :, (2, 1, 0)]
         im = np.clip(im, 0, 255)
         im = im.astype(np.uint8)
-
-        '''
+        """
         if out_label_refined is not None:
             mask = out_label_refined_blob[i, :, :]
             visualize_segmentation(im, mask)
-        #'''
+        #"""
 
         # show image
         fig = plt.figure()
@@ -274,13 +292,13 @@ def _vis_minibatch_segmentation(image, depth, label, out_label=None, out_label_r
         ax = fig.add_subplot(m, n, start)
         start += 1
         plt.imshow(im)
-        ax.set_title('image')
-        plt.axis('off')
+        ax.set_title("image")
+        plt.axis("off")
 
         ax = fig.add_subplot(m, n, start)
         start += 1
         plt.imshow(im)
-        plt.axis('off')
+        plt.axis("off")
 
         if bbox is not None:
             boxes = bbox[i].numpy()
@@ -290,7 +308,15 @@ def _vis_minibatch_segmentation(image, depth, label, out_label=None, out_label_r
                 x2 = boxes[j, 2]
                 y2 = boxes[j, 3]
                 plt.gca().add_patch(
-                    plt.Rectangle((x1, y1), x2-x1, y2-y1, fill=False, edgecolor='g', linewidth=3))
+                    plt.Rectangle(
+                        (x1, y1),
+                        x2 - x1,
+                        y2 - y1,
+                        fill=False,
+                        edgecolor="g",
+                        linewidth=3,
+                    )
+                )
 
         if selected_pixels is not None:
             selected_indices = selected_pixels[i]
@@ -298,32 +324,32 @@ def _vis_minibatch_segmentation(image, depth, label, out_label=None, out_label_r
                 index = selected_indices[j]
                 y = index / width
                 x = index % width
-                plt.plot(x, y, 'ro', markersize=1.0)
+                plt.plot(x, y, "ro", markersize=1.0)
 
         if im_blob.shape[1] == 4:
             label = im_blob[i, 3, :, :]
             ax = fig.add_subplot(m, n, start)
             start += 1
             plt.imshow(label)
-            ax.set_title('initial label')
+            ax.set_title("initial label")
 
         if depth is not None:
             depth = depth_blob[i]
             ax = fig.add_subplot(m, n, start)
             start += 1
             plt.imshow(depth[0])
-            ax.set_title('depth X')
-            plt.axis('off')
+            ax.set_title("depth X")
+            plt.axis("off")
             ax = fig.add_subplot(m, n, start)
             start += 1
             plt.imshow(depth[1])
-            ax.set_title('depth Y')
-            plt.axis('off')
+            ax.set_title("depth Y")
+            plt.axis("off")
             ax = fig.add_subplot(m, n, start)
             start += 1
             plt.imshow(depth[2])
-            ax.set_title('depth Z')
-            plt.axis('off')
+            ax.set_title("depth Z")
+            plt.axis("off")
 
         # show label
         if label is not None:
@@ -331,8 +357,8 @@ def _vis_minibatch_segmentation(image, depth, label, out_label=None, out_label_r
             ax = fig.add_subplot(m, n, start)
             start += 1
             plt.imshow(label)
-            ax.set_title('gt label')
-            plt.axis('off')
+            ax.set_title("gt label")
+            plt.axis("off")
 
         # show out label
         if out_label is not None:
@@ -340,8 +366,8 @@ def _vis_minibatch_segmentation(image, depth, label, out_label=None, out_label_r
             ax = fig.add_subplot(m, n, start)
             start += 1
             plt.imshow(label)
-            ax.set_title('out label')
-            plt.axis('off')
+            ax.set_title("out label")
+            plt.axis("off")
 
         # show out label refined
         if out_label_refined is not None:
@@ -349,8 +375,8 @@ def _vis_minibatch_segmentation(image, depth, label, out_label=None, out_label_r
             ax = fig.add_subplot(m, n, start)
             start += 1
             plt.imshow(label)
-            ax.set_title('out label refined')
-            plt.axis('off')
+            ax.set_title("out label refined")
+            plt.axis("off")
 
         if features is not None:
             im = torch.cuda.FloatTensor(height, width, 3)
@@ -362,13 +388,13 @@ def _vis_minibatch_segmentation(image, depth, label, out_label=None, out_label_r
             ax = fig.add_subplot(m, n, start)
             start += 1
             plt.imshow(im)
-            ax.set_title('features')
-            plt.axis('off')
+            ax.set_title("features")
+            plt.axis("off")
 
         if ind is not None:
             mng = plt.get_current_fig_manager()
             plt.show()
-            filename = 'output/images/%06d.png' % ind
+            filename = "output/images/%06d.png" % ind
             fig.savefig(filename)
 
         plt.show()

@@ -2,22 +2,30 @@
 # This work is licensed under the NVIDIA Source Code License - Non-commercial. Full
 # text can be found in LICENSE.md
 
+import os
+import time
+
+import cv2
+import numpy as np
+import scipy
 import torch
 import torch.nn.functional as F
-import time
-import os
-import numpy as np
-import cv2
-import scipy
 
-from bandu_stacking.ucn.lib.fcn.config import cfg
-from bandu_stacking.ucn.lib.fcn.test_common import _vis_minibatch_segmentation, _vis_minibatch_segmentation_final
-from bandu_stacking.ucn.lib.utils.mean_shift import mean_shift_smart_init, mean_shift_smart_init_masks
-from bandu_stacking.ucn.lib.utils.evaluation import multilabel_metrics
 import bandu_stacking.ucn.lib.utils.mask as util_
+from bandu_stacking.ucn.lib.fcn.config import cfg
+from bandu_stacking.ucn.lib.fcn.test_common import (
+    _vis_minibatch_segmentation,
+    _vis_minibatch_segmentation_final,
+)
+from bandu_stacking.ucn.lib.utils.evaluation import multilabel_metrics
+from bandu_stacking.ucn.lib.utils.mean_shift import (
+    mean_shift_smart_init,
+    mean_shift_smart_init_masks,
+)
+
 
 class AverageMeter(object):
-    """Computes and stores the average and current value"""
+    """Computes and stores the average and current value."""
 
     def __init__(self):
         self.reset()
@@ -35,14 +43,15 @@ class AverageMeter(object):
         self.avg = self.sum / self.count
 
     def __repr__(self):
-        return '{:.3f} ({:.3f})'.format(self.val, self.avg)
-        
-        
+        return "{:.3f} ({:.3f})".format(self.val, self.avg)
+
+
 def combine_masks(mask):
-    """
-    Combine several bit masks [N, H, W] into a mask [H,W],
-    e.g. 8*480*640 tensor becomes a numpy array of 480*640.
-    [[1,0,0], [0,1,0]] = > [2,3,0]. We assign labels from 2 since 1 stands for table.
+    """Combine several bit masks [N, H, W] into a mask [H,W], e.g. 8*480*640
+    tensor becomes a numpy array of 480*640.
+
+    [[1,0,0], [0,1,0]] = > [2,3,0]. We assign labels from 2 since 1
+    stands for table.
     """
 
     mask = mask.cpu().numpy()
@@ -50,40 +59,40 @@ def combine_masks(mask):
     bin_mask = np.zeros((h, w))
     num_instance = num
     bbox = np.zeros((num_instance, 4), dtype=np.float32)
-        
+
     # if there is not any instance, just return a mask full of 0s.
     if num_instance == 0:
         return bin_mask, bbox, mask
 
     print(mask.shape)
-    selected = np.zeros((num_instance, ), dtype=np.int32)
+    selected = np.zeros((num_instance,), dtype=np.int32)
     object_label = 1
     kernel = np.ones((3, 3), np.uint8)
     for i in range(num_instance):
         m = mask[i].astype(np.uint8)
-        
+
         # erode mask
         m = cv2.erode(m, kernel)
-        
+
         if np.sum(m) < 400:
             continue
 
         label_pos = np.nonzero(m)
         bin_mask[label_pos] = object_label
-        
+
         # bounding box
         y1 = np.min(label_pos[0])
         y2 = np.max(label_pos[0])
         x1 = np.min(label_pos[1])
         x2 = np.max(label_pos[1])
         bbox[i, :] = [x1, y1, x2, y2]
-        
+
         object_label += 1
         selected[i] = 1
-        
+
     mask = mask[selected == 1]
-    bbox = bbox[selected == 1]                               
-    return bin_mask, bbox, mask        
+    bbox = bbox[selected == 1]
+    return bin_mask, bbox, mask
 
 
 def clustering_features(features, num_seeds=100):
@@ -98,12 +107,14 @@ def clustering_features(features, num_seeds=100):
     for j in range(features.shape[0]):
         X = features[j].view(features.shape[1], -1)
         X = torch.transpose(X, 0, 1)
-        cluster_labels, selected_indices = mean_shift_smart_init(X, kappa=kappa, num_seeds=num_seeds, max_iters=10, metric=metric)
+        cluster_labels, selected_indices = mean_shift_smart_init(
+            X, kappa=kappa, num_seeds=num_seeds, max_iters=10, metric=metric
+        )
         out_label[j] = cluster_labels.view(height, width)
         selected_pixels.append(selected_indices)
     return out_label, selected_pixels
-    
-    
+
+
 def clustering_features_masks(features, num_seeds=100):
     metric = cfg.TRAIN.EMBEDDING_METRIC
     height = features.shape[2]
@@ -116,12 +127,14 @@ def clustering_features_masks(features, num_seeds=100):
     for j in range(features.shape[0]):
         X = features[j].view(features.shape[1], -1)
         X = torch.transpose(X, 0, 1)
-        masks, selected_indices = mean_shift_smart_init_masks(X, kappa=kappa, num_seeds=num_seeds, max_iters=10, metric=metric)
+        masks, selected_indices = mean_shift_smart_init_masks(
+            X, kappa=kappa, num_seeds=num_seeds, max_iters=10, metric=metric
+        )
         masks = masks.view(-1, height, width)
         label, bbox, masks = combine_masks(masks)
         out_label[j] = torch.from_numpy(label).cuda()
         selected_pixels.append(selected_indices)
-    return out_label, selected_pixels, masks  
+    return out_label, selected_pixels, masks
 
 
 def crop_rois(rgb, initial_masks, depth):
@@ -143,35 +156,49 @@ def crop_rois(rgb, initial_masks, depth):
         depth_crops = None
 
     for index, mask_id in enumerate(mask_ids):
-        mask = (initial_masks[0] == mask_id).float() # Shape: [H x W]
+        mask = (initial_masks[0] == mask_id).float()  # Shape: [H x W]
         x_min, y_min, x_max, y_max = util_.mask_to_tight_box(mask)
-        x_padding = int(torch.round((x_max - x_min).float() * padding_percentage).item())
-        y_padding = int(torch.round((y_max - y_min).float() * padding_percentage).item())
+        x_padding = int(
+            torch.round((x_max - x_min).float() * padding_percentage).item()
+        )
+        y_padding = int(
+            torch.round((y_max - y_min).float() * padding_percentage).item()
+        )
 
         # pad and be careful of boundaries
         x_min = max(x_min - x_padding, 0)
-        x_max = min(x_max + x_padding, W-1)
+        x_max = min(x_max + x_padding, W - 1)
         y_min = max(y_min - y_padding, 0)
-        y_max = min(y_max + y_padding, H-1)
+        y_max = min(y_max + y_padding, H - 1)
         rois[index, 0] = x_min
         rois[index, 1] = y_min
         rois[index, 2] = x_max
         rois[index, 3] = y_max
 
         # crop
-        rgb_crop = rgb[0, :, y_min:y_max+1, x_min:x_max+1] # [3 x crop_H x crop_W]
-        mask_crop = mask[y_min:y_max+1, x_min:x_max+1] # [crop_H x crop_W]
+        rgb_crop = rgb[
+            0, :, y_min : y_max + 1, x_min : x_max + 1
+        ]  # [3 x crop_H x crop_W]
+        mask_crop = mask[y_min : y_max + 1, x_min : x_max + 1]  # [crop_H x crop_W]
         if depth is not None:
-            depth_crop = depth[0, :, y_min:y_max+1, x_min:x_max+1] # [3 x crop_H x crop_W]
+            depth_crop = depth[
+                0, :, y_min : y_max + 1, x_min : x_max + 1
+            ]  # [3 x crop_H x crop_W]
 
         # resize
         new_size = (crop_size, crop_size)
-        rgb_crop = F.upsample_bilinear(rgb_crop.unsqueeze(0), new_size)[0] # Shape: [3 x new_H x new_W]
+        rgb_crop = F.upsample_bilinear(rgb_crop.unsqueeze(0), new_size)[
+            0
+        ]  # Shape: [3 x new_H x new_W]
         rgb_crops[index] = rgb_crop
-        mask_crop = F.upsample_nearest(mask_crop.unsqueeze(0).unsqueeze(0), new_size)[0,0] # Shape: [new_H, new_W]
+        mask_crop = F.upsample_nearest(mask_crop.unsqueeze(0).unsqueeze(0), new_size)[
+            0, 0
+        ]  # Shape: [new_H, new_W]
         mask_crops[index] = mask_crop
         if depth is not None:
-            depth_crop = F.upsample_bilinear(depth_crop.unsqueeze(0), new_size)[0] # Shape: [3 x new_H x new_W]
+            depth_crop = F.upsample_bilinear(depth_crop.unsqueeze(0), new_size)[
+                0
+            ]  # Shape: [3 x new_H x new_W]
             depth_crops[index] = depth_crop
 
     return rgb_crops, mask_crops, rois, depth_crops
@@ -209,7 +236,7 @@ def match_label_crop(initial_masks, labels_crop, out_label_crop, rois, depth_cro
             roi_size = orig_H * orig_W
             sorted_ids.append((i, roi_size))
 
-    sorted_ids = sorted(sorted_ids, key=lambda x : x[1], reverse=True)
+    sorted_ids = sorted(sorted_ids, key=lambda x: x[1], reverse=True)
     sorted_ids = [x[0] for x in sorted_ids]
 
     # combine the local labels
@@ -239,7 +266,9 @@ def match_label_crop(initial_masks, labels_crop, out_label_crop, rois, depth_cro
 
         # Set refined mask
         h_idx, w_idx = torch.nonzero(resized_mask).t()
-        refined_masks[0, y_min:y_max+1, x_min:x_max+1][h_idx, w_idx] = resized_mask[h_idx, w_idx].cpu()
+        refined_masks[0, y_min : y_max + 1, x_min : x_max + 1][h_idx, w_idx] = (
+            resized_mask[h_idx, w_idx].cpu()
+        )
 
     return refined_masks, labels_crop
 
@@ -276,8 +305,8 @@ def filter_labels(labels, bboxes):
         for j in range(bbox.shape[0]):
             x1 = max(int(bbox[j, 0]), 0)
             y1 = max(int(bbox[j, 1]), 0)
-            x2 = min(int(bbox[j, 2]), width-1)
-            y2 = min(int(bbox[j, 3]), height-1)
+            x2 = min(int(bbox[j, 2]), width - 1)
+            y2 = min(int(bbox[j, 3]), height - 1)
             bbox_mask[y1:y2, x1:x2] = 1
 
         mask_ids = torch.unique(label)
@@ -297,18 +326,18 @@ def filter_labels(labels, bboxes):
 def test_sample(sample, network, network_crop):
 
     # construct input
-    if sample['image_color'] is not None:
-        image = sample['image_color'].cuda()
+    if sample["image_color"] is not None:
+        image = sample["image_color"].cuda()
     else:
         image = None
 
-    if cfg.INPUT == 'DEPTH' or cfg.INPUT == 'RGBD':
-        depth = sample['depth'].cuda()
+    if cfg.INPUT == "DEPTH" or cfg.INPUT == "RGBD":
+        depth = sample["depth"].cuda()
     else:
         depth = None
 
-    if 'label' in sample:
-        label = sample['label'].cuda()
+    if "label" in sample:
+        label = sample["label"].cuda()
     else:
         label = None
 
@@ -324,33 +353,28 @@ def test_sample(sample, network, network_crop):
     # zoom in refinement
     out_label_refined = None
     if network_crop is not None:
-        rgb_crop, out_label_crop, rois, depth_crop = crop_rois(image, out_label.clone(), depth)
+        rgb_crop, out_label_crop, rois, depth_crop = crop_rois(
+            image, out_label.clone(), depth
+        )
         if rgb_crop.shape[0] > 0:
             features_crop = network_crop(rgb_crop, out_label_crop, depth_crop)
             labels_crop, selected_pixels_crop = clustering_features(features_crop)
-            out_label_refined, labels_crop = match_label_crop(out_label, labels_crop.cuda(), out_label_crop, rois, depth_crop)
+            out_label_refined, labels_crop = match_label_crop(
+                out_label, labels_crop.cuda(), out_label_crop, rois, depth_crop
+            )
 
     if cfg.TEST.VISUALIZE:
-        '''
-        for i in range(masks.shape[0]):
-            fig = plt.figure()
-            ax = fig.add_subplot(1, 2, 1)
-            im = sample['image_color'].cpu().numpy()
-            im = im[0, :3, :, :].copy()
-            im = im.transpose((1, 2, 0)) * 255.0
-            im += cfg.PIXEL_MEANS
-            im = im[:, :, (2, 1, 0)]            
-            im = np.clip(im, 0, 255)
-            im = im.astype(np.uint8)
-            plt.imshow(im)    
-            ax = fig.add_subplot(1, 2, 2)
-            plt.imshow(masks[i])
-            plt.show()
-        '''
-    
         bbox = None
-        _vis_minibatch_segmentation_final(image, depth, label, out_label, out_label_refined, features, 
-            selected_pixels=selected_pixels, bbox=bbox)
+        _vis_minibatch_segmentation_final(
+            image,
+            depth,
+            label,
+            out_label,
+            out_label_refined,
+            features,
+            selected_pixels=selected_pixels,
+            bbox=bbox,
+        )
     return out_label, out_label_refined
 
 
@@ -372,27 +396,27 @@ def test_segnet(test_loader, network, output_dir, network_crop):
         end = time.time()
 
         # construct input
-        image = sample['image_color'].cuda()
-        if cfg.INPUT == 'DEPTH' or cfg.INPUT == 'RGBD':
-            depth = sample['depth'].cuda()
+        image = sample["image_color"].cuda()
+        if cfg.INPUT == "DEPTH" or cfg.INPUT == "RGBD":
+            depth = sample["depth"].cuda()
         else:
             depth = None
-        label = sample['label'].cuda()
+        label = sample["label"].cuda()
 
         # run network
         features = network(image, label, depth).detach()
         out_label, selected_pixels = clustering_features(features, num_seeds=100)
 
-        if 'ocid' in test_loader.dataset.name and depth is not None:
+        if "ocid" in test_loader.dataset.name and depth is not None:
             # filter labels on zero depth
             out_label = filter_labels_depth(out_label, depth, 0.5)
 
-        if 'osd' in test_loader.dataset.name and depth is not None:
+        if "osd" in test_loader.dataset.name and depth is not None:
             # filter labels on zero depth
             out_label = filter_labels_depth(out_label, depth, 0.8)
 
         # evaluation
-        gt = sample['label'].squeeze().numpy()
+        gt = sample["label"].squeeze().numpy()
         prediction = out_label.squeeze().detach().cpu().numpy()
         metrics = multilabel_metrics(prediction, gt)
         metrics_all.append(metrics)
@@ -401,11 +425,15 @@ def test_segnet(test_loader, network, output_dir, network_crop):
         # zoom in refinement
         out_label_refined = None
         if network_crop is not None:
-            rgb_crop, out_label_crop, rois, depth_crop = crop_rois(image, out_label.clone(), depth)
+            rgb_crop, out_label_crop, rois, depth_crop = crop_rois(
+                image, out_label.clone(), depth
+            )
             if rgb_crop.shape[0] > 0:
                 features_crop = network_crop(rgb_crop, out_label_crop, depth_crop)
                 labels_crop, selected_pixels_crop = clustering_features(features_crop)
-                out_label_refined, labels_crop = match_label_crop(out_label, labels_crop.cuda(), out_label_crop, rois, depth_crop)
+                out_label_refined, labels_crop = match_label_crop(
+                    out_label, labels_crop.cuda(), out_label_crop, rois, depth_crop
+                )
 
         # evaluation
         if out_label_refined is not None:
@@ -417,44 +445,56 @@ def test_segnet(test_loader, network, output_dir, network_crop):
         print(metrics_refined)
 
         if cfg.TEST.VISUALIZE:
-            _vis_minibatch_segmentation(image, depth, label, out_label, out_label_refined, features, 
-                selected_pixels=selected_pixels, bbox=None)
+            _vis_minibatch_segmentation(
+                image,
+                depth,
+                label,
+                out_label,
+                out_label_refined,
+                features,
+                selected_pixels=selected_pixels,
+                bbox=None,
+            )
         else:
             # save results
-            result = {'labels': prediction, 'labels_refined': prediction_refined, 'filename': sample['filename']}
-            filename = os.path.join(output_dir, '%06d.mat' % i)
+            result = {
+                "labels": prediction,
+                "labels_refined": prediction_refined,
+                "filename": sample["filename"],
+            }
+            filename = os.path.join(output_dir, "%06d.mat" % i)
             print(filename)
             scipy.io.savemat(filename, result, do_compression=True)
 
         # measure elapsed time
         batch_time.update(time.time() - end)
-        print('[%d/%d], batch time %.2f' % (i, epoch_size, batch_time.val))
+        print("[%d/%d], batch time %.2f" % (i, epoch_size, batch_time.val))
 
     # sum the values with same keys
-    print('========================================================')
+    print("========================================================")
     result = {}
     num = len(metrics_all)
-    print('%d images' % num)
-    print('========================================================')
+    print("%d images" % num)
+    print("========================================================")
     for metrics in metrics_all:
         for k in metrics.keys():
             result[k] = result.get(k, 0) + metrics[k]
 
     for k in sorted(result.keys()):
         result[k] /= num
-        print('%s: %f' % (k, result[k]))
+        print("%s: %f" % (k, result[k]))
 
-    print('%.6f' % (result['Objects Precision']))
-    print('%.6f' % (result['Objects Recall']))
-    print('%.6f' % (result['Objects F-measure']))
-    print('%.6f' % (result['Boundary Precision']))
-    print('%.6f' % (result['Boundary Recall']))
-    print('%.6f' % (result['Boundary F-measure']))
-    print('%.6f' % (result['obj_detected_075_percentage']))
+    print("%.6f" % (result["Objects Precision"]))
+    print("%.6f" % (result["Objects Recall"]))
+    print("%.6f" % (result["Objects F-measure"]))
+    print("%.6f" % (result["Boundary Precision"]))
+    print("%.6f" % (result["Boundary Recall"]))
+    print("%.6f" % (result["Boundary F-measure"]))
+    print("%.6f" % (result["obj_detected_075_percentage"]))
 
-    print('========================================================')
+    print("========================================================")
     print(result)
-    print('====================Refined=============================')
+    print("====================Refined=============================")
 
     result_refined = {}
     for metrics in metrics_all_refined:
@@ -463,6 +503,6 @@ def test_segnet(test_loader, network, output_dir, network_crop):
 
     for k in sorted(result_refined.keys()):
         result_refined[k] /= num
-        print('%s: %f' % (k, result_refined[k]))
+        print("%s: %f" % (k, result_refined[k]))
     print(result_refined)
-    print('========================================================')
+    print("========================================================")

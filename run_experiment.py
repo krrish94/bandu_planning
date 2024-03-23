@@ -60,7 +60,7 @@ def main():
         num_blocks=args.num_blocks,
         disable_gui=args.disable_gui,
         disable_robot=args.disable_robot,
-        real_camera=args.real_camera
+        real_camera=args.real_camera,
     )
 
     policy = algorithms[args.algorithm](env)
