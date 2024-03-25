@@ -12,7 +12,6 @@ from bandu_stacking.env_utils import (
     GRIPPER_GROUP,
     PANDA_TOOL_TIP,
     Grasp,
-    GroupConf,
     GroupTrajectory,
     ParentBody,
     Sequence,
@@ -24,7 +23,6 @@ from bandu_stacking.samplers import (
     DISABLE_ALL_COLLISIONS,
     SELF_COLLISIONS,
     plan_prehensile,
-    plan_workspace_motion,
     set_open_positions,
 )
 
@@ -230,15 +228,13 @@ def get_grasp_gen_fn(
     return gen_fn
 
 
-def get_plan_pick_fn(robot, environment=[], **kwargs):
-    robot_saver = pbu.BodySaver(robot, **kwargs)
+def get_plan_pick_fn(robot, environment=[], debug=False, **kwargs):
     environment = environment
 
     def fn(obj, pose, grasp, base_conf):
-        robot_saver.restore()
         base_conf.assign(**kwargs)
         arm_path = plan_prehensile(
-            robot, obj, pose, grasp, environment=environment, **kwargs
+            robot, obj, pose, grasp, environment=environment, debug=debug,**kwargs
         )
 
         if arm_path is None:
@@ -287,16 +283,14 @@ def get_plan_pick_fn(robot, environment=[], **kwargs):
 #######################################################
 
 
-def get_plan_place_fn(robot, environment=[], **kwargs):
-    robot_saver = pbu.BodySaver(robot, **kwargs)
+def get_plan_place_fn(robot, environment=[], debug=False, **kwargs):
     environment = environment
 
     def fn(obj, pose, grasp, base_conf):
         # TODO: generator instead of a function
-        robot_saver.restore()
         base_conf.assign(**kwargs)
         arm_path = plan_prehensile(
-            robot, obj, pose, grasp, environment=environment, **kwargs
+            robot, obj, pose, grasp, environment=environment, debug=debug, **kwargs
         )
         if arm_path is None:
             print("[plan_place_fn] arm_path is None")
@@ -329,91 +323,11 @@ def get_plan_place_fn(robot, environment=[], **kwargs):
 
     return fn
 
-
-#######################################################
-
-
-def get_plan_drop_fn(robot, environment=[], z_offset=2e-2, **kwargs):
-    robot_saver = pbu.BodySaver(robot, **kwargs)
-
-    def fn(obj, grasp, bin, bin_pose, base_conf):
-        robot_saver.restore()
-        base_conf.assign(**kwargs)
-        bin_pose.assign(**kwargs)
-        obstacles = list(environment)
-
-        gripper = robot.get_component(GRIPPER_GROUP, **kwargs)
-        parent_from_tool = robot.get_parent_from_tool(**kwargs)
-
-        bin_aabb = pbu.get_aabb(bin)
-
-        reference_pose = pbu.multiply(
-            pbu.Pose(
-                euler=pbu.Euler(pitch=np.pi / 2, yaw=random.uniform(0, 2 * np.pi))
-            ),
-            grasp.value,
-        )
-        with pbu.PoseSaver(obj):
-            pbu.set_pose(obj, reference_pose)
-            obj_pose = (
-                np.append(
-                    pbu.get_aabb_center(bin_aabb)[:2],
-                    [pbu.stable_z_on_aabb(obj, bin_aabb) + z_offset],
-                ),
-                pbu.quat_from_pose(reference_pose),
-            )  # TODO: get_aabb_top, get_aabb_bottom
-
-        if obj_pose is None:
-            return None
-        gripper_pose = pbu.multiply(obj_pose, pbu.invert(grasp.value))
-        pbu.set_pose(gripper, pbu.multiply(gripper_pose, pbu.invert(parent_from_tool)))
-        pbu.set_pose(obj, pbu.multiply(gripper_pose, grasp.value))
-        if any(
-            pbu.pairwise_collisions(body, environment, max_distance=0.0)
-            for body in [obj, gripper]
-        ):
-            return None
-
-        attachment = grasp.create_attachment(
-            robot, link=pbu.link_from_name(robot, PANDA_TOOL_TIP, **kwargs)
-        )
-
-        arm_path = plan_workspace_motion(
-            robot, [gripper_pose], attachment=attachment, obstacles=obstacles
-        )
-        if arm_path is None:
-            return None
-        arm_conf = GroupConf(robot, ARM_GROUP, positions=arm_path[0], **kwargs)
-        switch = Switch(obj, parent=None)
-
-        closed_conf, open_conf = robot.get_group_limits(GRIPPER_GROUP, **kwargs)
-        # gripper_joints = robot.get_group_joints(gripper_group)
-        # closed_conf = grasp.closed_position * np.ones(len(gripper_joints))
-        gripper_traj = GroupTrajectory(
-            robot,
-            GRIPPER_GROUP,
-            path=[closed_conf, open_conf],
-            contexts=[],
-            **kwargs,
-        )
-
-        commands = [switch, gripper_traj]
-        sequence = Sequence(commands=commands, name="drop-{}".format(obj))
-        return (arm_conf, sequence)
-
-    return fn
-
-
-#######################################################
-
-
 def get_plan_motion_fn(
     robot, environment=[], **kwargs
-):  # , collisions=True): #, teleport=False):
-    robot_saver = pbu.BodySaver(robot, **kwargs)
+):
 
     def fn(q1, q2, attachments=[]):
-        robot_saver.restore()
         print("Plan motion fn {}->{}".format(q1, q2))
 
         obstacles = list(environment)

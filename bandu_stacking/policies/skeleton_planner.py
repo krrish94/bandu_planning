@@ -63,12 +63,12 @@ def get_random_placement_pose(obj, surface_aabb, client):
     )
 
 
-def get_pick_place_plan(abstract_action, env):
+def get_pick_place_plan(abstract_action, state, env, csp_debug=False):
 
-    MAX_GRASP_ATTEMPTS = 10
-    MAX_PICK_ATTEMPTS = 10
-    MAX_PLACE_ATTEMPTS = 10
-
+    MAX_GRASP_ATTEMPTS = 100
+    MAX_PICK_ATTEMPTS = 1
+    MAX_PLACE_ATTEMPTS = 1
+    
     client, robot = env.client, env.robot
     client = env.client
     surface_aabb = TABLE_AABB
@@ -85,10 +85,10 @@ def get_pick_place_plan(abstract_action, env):
 
     motion_planner = get_plan_motion_fn(robot, environment=obstacles, client=client)
     pick_planner = get_plan_pick_fn(
-        robot, environment=obstacles, max_attempts=MAX_PICK_ATTEMPTS, client=client
+        robot, environment=obstacles, max_attempts=MAX_PICK_ATTEMPTS, debug=csp_debug, client=client
     )
     place_planner = get_plan_place_fn(
-        robot, environment=obstacles, max_attempts=MAX_PLACE_ATTEMPTS, client=client
+        robot, environment=obstacles, max_attempts=MAX_PLACE_ATTEMPTS, debug=csp_debug, client=client
     )
 
     grasp_finder = get_grasp_gen_fn(
@@ -104,14 +104,21 @@ def get_pick_place_plan(abstract_action, env):
         print("[Planner] grasp attempt " + str(gi))
         (grasp,) = next(grasp_finder(obj, obj_aabb, obj_pose))
 
-        print("[Planner] finding pick plan")
+        print("[Planner] finding pick plan for grasp "+str(grasp))
         for _ in range(MAX_PICK_ATTEMPTS):
             pick = pick_planner(obj, pose, grasp, base_conf)
+            if(pick is not None):
+                break
 
         if pick is None:
             continue
-
+        
+        env.set_sim_state(state)
         q2, at1 = pick
+        q2.assign(client=client)
+        
+        if(csp_debug):
+            pbu.wait_if_gui("Picking like this", client=client)
 
         print("[Planner] finding place plan")
         for _ in range(MAX_PLACE_ATTEMPTS):
@@ -129,22 +136,33 @@ def get_pick_place_plan(abstract_action, env):
         if place is None:
             continue
 
+        env.set_sim_state(state)
         q3, at2 = place
-
+        q3.assign(client=client)
+        
+        if(csp_debug):
+            pbu.wait_if_gui("Placing like this", client=client)
+        
         attachment = grasp.create_attachment(
             robot, link=pbu.link_from_name(robot, PANDA_TOOL_TIP, client=client)
         )
 
         print("[Planner] finding pick motion plan")
+        q1.assign(client=client)
         motion_plan1 = motion_planner(q1, q2)
         if motion_plan1 is None:
             continue
 
+        env.set_sim_state(state)
+        q2.assign(client=client)
+        attachment.assign(client=client)
+        
         print("[Planner] finding place motion plan")
         motion_plan2 = motion_planner(q2, q3, attachments=[attachment])
         if motion_plan2 is None:
             continue
-
+        
+        env.set_sim_state(state)
         env.robot.remove_components(client=client)
 
         return Sequence([motion_plan1, at1, motion_plan2, at2])
@@ -499,7 +517,7 @@ class SkeletonPlanner(Policy):
                         str(aai), str(aa)
                     )
                 )
-                sequence = get_pick_place_plan(aa, env=self.env)
+                sequence = get_pick_place_plan(aa, current_state, env=self.env)
                 if sequence is None:
                     print("[Planner] Skeleton CSP failed")
                     sys.exit()

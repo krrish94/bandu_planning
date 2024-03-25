@@ -223,6 +223,7 @@ class StackingEnvironment:
             pbu.get_aabb_extent(pbu.get_aabb(self.foundation, client=self.client))[2]
             / 2.0
         )
+        self.foundation_pose[0][0]+=0.05
         self.foundation_pose[1] = pbu.quat_from_euler(pbu.Euler(yaw=np.pi / 2.0))
         pbu.set_pose(self.foundation, self.foundation_pose, client=self.client)
         pbu.wait_if_gui(client=self.client)
