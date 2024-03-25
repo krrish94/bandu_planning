@@ -13,6 +13,7 @@ import pybullet_utils.bullet_client as bc
 
 import bandu_stacking.pb_utils as pbu
 from bandu_stacking.env_utils import (
+    ARM_GROUP,
     PANDA_PATH,
     TABLE_AABB,
     TABLE_POSE,
@@ -21,6 +22,7 @@ from bandu_stacking.env_utils import (
     create_default_env,
     create_pybullet_block,
     get_absolute_pose,
+    get_current_confs,
 )
 from bandu_stacking.policies.policy import State
 from bandu_stacking.realsense_utils import CALIB_DIR, CAMERA_SNS, get_camera_image
@@ -223,7 +225,7 @@ class StackingEnvironment:
             pbu.get_aabb_extent(pbu.get_aabb(self.foundation, client=self.client))[2]
             / 2.0
         )
-        self.foundation_pose[0][0]+=0.05
+        self.foundation_pose[0][0] += 0.05
         self.foundation_pose[1] = pbu.quat_from_euler(pbu.Euler(yaw=np.pi / 2.0))
         pbu.set_pose(self.foundation, self.foundation_pose, client=self.client)
         pbu.wait_if_gui(client=self.client)
@@ -280,12 +282,21 @@ class StackingEnvironment:
         for block in self.block_ids:
             pose = self.client.getBasePositionAndOrientation(block)
             block_poses[block] = pose
-        return State(self.block_ids, block_poses, foundation=self.foundation)
 
-    def set_sim_state(self, state):
+        current_conf = get_current_confs(self.robot, client=self.client)[ARM_GROUP]
+        return State(
+            self.block_ids,
+            block_poses,
+            foundation=self.foundation,
+            robot_conf=current_conf,
+        )
+
+    def set_sim_state(self, state: State):
         for block_id, block_pose in state.block_poses.items():
             (point, quat) = block_pose
             self.client.resetBasePositionAndOrientation(block_id, point, quat)
+        if state.robot_conf is not None:
+            state.robot_conf.assign(client=self.client)
 
     def state_diff(self, s1, s2):
         return sum(
@@ -297,14 +308,14 @@ class StackingEnvironment:
             ]
         )
 
-    def simulate_until_static(self, sim_freq=0, max_iter=100):
+    def simulate_until_static(self, sim_freq=0, max_iter=50):
         state_diff_thresh = 5e-4
 
         prev_state = self.state_from_sim()
         state_diff = float("inf")
         count = 0
         while state_diff > state_diff_thresh:
-            for _ in range(5):
+            for _ in range(10):
                 time.sleep(sim_freq)
                 self.client.stepSimulation()
             current_state = self.state_from_sim()

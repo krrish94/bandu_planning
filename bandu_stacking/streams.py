@@ -234,7 +234,7 @@ def get_plan_pick_fn(robot, environment=[], debug=False, **kwargs):
     def fn(obj, pose, grasp, base_conf):
         base_conf.assign(**kwargs)
         arm_path = plan_prehensile(
-            robot, obj, pose, grasp, environment=environment, debug=debug,**kwargs
+            robot, obj, pose, grasp, environment=environment, debug=debug, **kwargs
         )
 
         if arm_path is None:
@@ -323,9 +323,8 @@ def get_plan_place_fn(robot, environment=[], debug=False, **kwargs):
 
     return fn
 
-def get_plan_motion_fn(
-    robot, environment=[], **kwargs
-):
+
+def get_plan_motion_fn(robot, environment=[], debug=False, **kwargs):
 
     def fn(q1, q2, attachments=[]):
         print("Plan motion fn {}->{}".format(q1, q2))
@@ -349,6 +348,7 @@ def get_plan_motion_fn(
             restarts=1,
             iterations=5,
             smooth=100,
+            debug=debug,
             disable_collisions=DISABLE_ALL_COLLISIONS,
             **kwargs,
         )

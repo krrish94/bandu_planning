@@ -973,11 +973,12 @@ def check_collision(state, action, client=None):
     assert client is not None
     target_pose = state.block_poses[action.target_block]
     src_pose = get_absolute_pose(target_pose, action)
+    for block, block_pose in state.block_poses.items():
+        pbu.set_pose(block, block_pose, client=client)
 
     pbu.set_pose(action.grasp_block, src_pose, client=client)
     for block, block_pose in state.block_poses.items():
         if block != action.grasp_block:
-            pbu.set_pose(block, block_pose, client=client)
             if pbu.pairwise_collision(action.grasp_block, block, client=client):
                 return True
     return False
@@ -1018,3 +1019,19 @@ def create_pybullet_block(
     )
 
     return block_id
+
+
+def get_current_confs(robot: PandaRobot, **kwargs):
+
+    return {
+        group: GroupConf(
+            robot,
+            group,
+            pbu.get_joint_positions(
+                robot, robot.get_group_joints(group, **kwargs), **kwargs
+            ),
+            important=True,
+            **kwargs,
+        )
+        for group in PANDA_GROUPS
+    }

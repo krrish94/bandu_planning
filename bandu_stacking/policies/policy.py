@@ -1,11 +1,18 @@
 from __future__ import print_function
 
+from dataclasses import dataclass, field
+from typing import Dict, List
 
+from bandu_stacking.env_utils import Conf
+from bandu_stacking.pb_utils import Pose
+
+
+@dataclass
 class State:
-    def __init__(self, block_ids, block_poses, foundation):
-        self.block_ids = block_ids
-        self.block_poses = block_poses
-        self.foundation = foundation
+    block_ids: List[int] = field(default_factory=lambda: [])
+    block_poses: Dict[int, Pose] = field(default_factory=lambda: {})
+    foundation: int = None
+    robot_conf: Conf = None
 
     def __repr__(self):
         return f"State(block_ids={self.block_ids}, block_poses={self.block_poses})"

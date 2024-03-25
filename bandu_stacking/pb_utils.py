@@ -3109,18 +3109,27 @@ def get_distance_fn(body, joints, weights=None, norm=2, **kwargs):
 
 
 def check_initial_end(
-    body, joints, start_conf, end_conf, collision_fn, verbose=True, **kwargs
+    body,
+    joints,
+    start_conf,
+    end_conf,
+    collision_fn,
+    debug=False,
+    verbose=True,
+    **kwargs,
 ):
     # TODO: collision_fn might not accept kwargs
     if collision_fn(start_conf, verbose=verbose):
-        set_joint_positions(body, joints, start_conf, **kwargs)
-        print("Warning: initial configuration is in collision")
-        wait_if_gui(**kwargs)
+        print("Warning: initial configuration is in collision {}".format(start_conf))
+        if debug:
+            set_joint_positions(body, joints, start_conf, **kwargs)
+            wait_if_gui(**kwargs)
         return False
     if collision_fn(end_conf, verbose=verbose):
-        set_joint_positions(body, joints, end_conf, **kwargs)
-        print("Warning: end configuration is in collision")
-        wait_if_gui(**kwargs)
+        print("Warning: end configuration is in collision {}".format(end_conf))
+        if debug:
+            set_joint_positions(body, joints, end_conf, **kwargs)
+            wait_if_gui(**kwargs)
         return False
     return True
 
@@ -3139,9 +3148,9 @@ def plan_joint_motion(
     use_aabb=False,
     cache=True,
     custom_limits={},
-    algorithm=None,
     disable_collisions=False,
     extra_collisions=None,
+    debug=False,
     **kwargs,
 ):
     assert len(joints) == len(end_conf)
@@ -3163,12 +3172,13 @@ def plan_joint_motion(
         cache=cache,
         disable_collisions=disable_collisions,
         extra_collisions=extra_collisions,
+        debug=debug,
         **kwargs,
     )
 
     start_conf = get_joint_positions(body, joints, **kwargs)
     if not check_initial_end(
-        body, joints, start_conf, end_conf, collision_fn, **kwargs
+        body, joints, start_conf, end_conf, collision_fn, debug=debug, **kwargs
     ):
         return None
 

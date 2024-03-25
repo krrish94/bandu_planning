@@ -1,9 +1,9 @@
 from __future__ import print_function
 
+import copy
 import math
 import random
 import sys
-import time
 
 import numpy as np
 import trimesh
@@ -14,13 +14,11 @@ import bandu_stacking.pb_utils as pbu
 from bandu_stacking.env import TABLE_AABB, get_absolute_pose
 from bandu_stacking.env_utils import (
     ARM_GROUP,
-    PANDA_GROUPS,
     PANDA_TOOL_TIP,
-    GroupConf,
-    PandaRobot,
     RelativePose,
     Sequence,
     check_collision,
+    get_current_confs,
     mesh_from_obj,
 )
 from bandu_stacking.policies.policy import Action, Policy
@@ -36,22 +34,6 @@ def aabb_height(aabb: pbu.AABB):
     return aabb.upper[2] - aabb.lower[2]
 
 
-def get_current_confs(robot: PandaRobot, **kwargs):
-
-    return {
-        group: GroupConf(
-            robot,
-            group,
-            pbu.get_joint_positions(
-                robot, robot.get_group_joints(group, **kwargs), **kwargs
-            ),
-            important=True,
-            **kwargs,
-        )
-        for group in PANDA_GROUPS
-    }
-
-
 def get_random_placement_pose(obj, surface_aabb, client):
     return pbu.Pose(
         point=pbu.Point(
@@ -63,13 +45,16 @@ def get_random_placement_pose(obj, surface_aabb, client):
     )
 
 
-def get_pick_place_plan(abstract_action, state, env, csp_debug=False):
+def get_pick_place_plan(abstract_action, env, csp_debug=False):
 
     MAX_GRASP_ATTEMPTS = 100
     MAX_PICK_ATTEMPTS = 1
     MAX_PLACE_ATTEMPTS = 1
-    
+
     client, robot = env.client, env.robot
+    init_confs = get_current_confs(robot, client=client)
+    body_saver = pbu.WorldSaver(client=client)
+
     client = env.client
     surface_aabb = TABLE_AABB
 
@@ -85,39 +70,47 @@ def get_pick_place_plan(abstract_action, state, env, csp_debug=False):
 
     motion_planner = get_plan_motion_fn(robot, environment=obstacles, client=client)
     pick_planner = get_plan_pick_fn(
-        robot, environment=obstacles, max_attempts=MAX_PICK_ATTEMPTS, debug=csp_debug, client=client
+        robot,
+        environment=obstacles,
+        max_attempts=MAX_PICK_ATTEMPTS,
+        debug=csp_debug,
+        client=client,
     )
     place_planner = get_plan_place_fn(
-        robot, environment=obstacles, max_attempts=MAX_PLACE_ATTEMPTS, debug=csp_debug, client=client
+        robot,
+        environment=obstacles,
+        max_attempts=MAX_PLACE_ATTEMPTS,
+        debug=csp_debug,
+        client=client,
     )
 
     grasp_finder = get_grasp_gen_fn(
         robot, environment=obstacles, grasp_mode="mesh", client=client
     )
 
-    init_confs = get_current_confs(robot, client=client)
     pose, base_conf = RelativePose(obj, client=client), init_confs["base"]
     q1 = init_confs[ARM_GROUP]
     pose = RelativePose(obj, client=client)
 
     for gi in range(MAX_GRASP_ATTEMPTS):
         print("[Planner] grasp attempt " + str(gi))
+        body_saver.restore()
         (grasp,) = next(grasp_finder(obj, obj_aabb, obj_pose))
 
-        print("[Planner] finding pick plan for grasp "+str(grasp))
+        print("[Planner] finding pick plan for grasp " + str(grasp))
         for _ in range(MAX_PICK_ATTEMPTS):
+            body_saver.restore()
             pick = pick_planner(obj, pose, grasp, base_conf)
-            if(pick is not None):
+            if pick is not None:
                 break
 
         if pick is None:
             continue
-        
-        env.set_sim_state(state)
+
         q2, at1 = pick
         q2.assign(client=client)
-        
-        if(csp_debug):
+
+        if csp_debug:
             pbu.wait_if_gui("Picking like this", client=client)
 
         print("[Planner] finding place plan")
@@ -128,6 +121,7 @@ def get_pick_place_plan(abstract_action, state, env, csp_debug=False):
                 obj, parent=None, relative_pose=placement_pose, client=client
             )
             print("[Place Planner] Placement for pose: " + str(place_rp))
+            body_saver.restore()
             place = place_planner(obj, place_rp, grasp, base_conf)
 
             if place is not None:
@@ -136,33 +130,28 @@ def get_pick_place_plan(abstract_action, state, env, csp_debug=False):
         if place is None:
             continue
 
-        env.set_sim_state(state)
         q3, at2 = place
         q3.assign(client=client)
-        
-        if(csp_debug):
+
+        if csp_debug:
             pbu.wait_if_gui("Placing like this", client=client)
-        
+
         attachment = grasp.create_attachment(
             robot, link=pbu.link_from_name(robot, PANDA_TOOL_TIP, client=client)
         )
 
         print("[Planner] finding pick motion plan")
-        q1.assign(client=client)
+        body_saver.restore()
         motion_plan1 = motion_planner(q1, q2)
         if motion_plan1 is None:
             continue
 
-        env.set_sim_state(state)
-        q2.assign(client=client)
-        attachment.assign(client=client)
-        
         print("[Planner] finding place motion plan")
+        body_saver.restore()
         motion_plan2 = motion_planner(q2, q3, attachments=[attachment])
         if motion_plan2 is None:
             continue
-        
-        env.set_sim_state(state)
+
         env.robot.remove_components(client=client)
 
         return Sequence([motion_plan1, at1, motion_plan2, at2])
@@ -221,8 +210,8 @@ class SkeletonPlanner(Policy):
         pbu.set_pose(source_obj, [pbu.unit_point(), r], **kwargs)
         pbu.set_pose(target_obj, state.block_poses[target_obj], **kwargs)
         ae1 = pbu.get_aabb_extent(pbu.get_aabb(source_obj, **kwargs))
-        ae2 = pbu.get_aabb(target_obj, **kwargs)
-        pose = [(x_offset, y_offset, ae2.upper[2] + ae1[2] / 2.0), r]
+        ae2 = pbu.get_aabb_extent(pbu.get_aabb(target_obj, **kwargs))
+        pose = [(x_offset, y_offset, ae2[2] / 2.0 + ae1[2] / 2.0), r]
 
         return Action(source_obj, target_obj, pose)
 
@@ -261,7 +250,7 @@ class SkeletonPlanner(Policy):
                 # Use all blocks
                 plan_length = len(initial_state.block_ids)
                 skeleton = []
-                state = initial_state
+                state = copy.deepcopy(initial_state)
                 collision = False
                 current_tower = [initial_state.foundation]
                 for _ in range(plan_length):
@@ -282,6 +271,10 @@ class SkeletonPlanner(Policy):
                     if check_collision(state, action, client=self.env.client):
                         collision = True
                         break
+                    else:
+                        state.block_poses[action.grasp_block] = get_absolute_pose(
+                            state.block_poses[action.target_block], action
+                        )
 
                     current_tower.append(source_object)
                     skeleton.append(action)
@@ -342,7 +335,6 @@ class SkeletonPlanner(Policy):
 
     def get_plan(self, initial_state):
         # Cache all of the bandu objects, their meshes, and sort the faces sizes
-        print("In get_plan")
         mesh_info = {}
         for block_id in initial_state.block_ids:
             block_dict = {}
@@ -474,12 +466,11 @@ class SkeletonPlanner(Policy):
                         concrete_plan.append(action)
                 if not fail:
                     self.env.set_sim_state(initial_state)
-                    return concrete_plan
+                    yield concrete_plan
 
             else:
 
                 # Sample continuous parameters, test tower height, fail if height not expected
-                print(plan_skeleton)
                 for action in plan_skeleton:
                     self.env.execute(action)
                     new_state = self.env.state_from_sim()
@@ -496,35 +487,46 @@ class SkeletonPlanner(Policy):
                         concrete_plan.append(action)
 
                 if not fail:
-                    pbu.wait_if_gui(
-                        "Run CSP to construct the following tower?",
-                        client=self.env.client,
-                    )
+                    # pbu.wait_if_gui(
+                    #     "Run CSP to construct the following tower?",
+                    #     client=self.env.client,
+                    # )
                     self.env.set_sim_state(initial_state)
-                    return concrete_plan
+                    yield concrete_plan
 
     def get_action(self, initial_state):
         if self.plan == None:
-            abstract_actions = self.get_plan(initial_state)
-            if abstract_actions is None:
+            for skeleton_index, abstract_actions in enumerate(
+                self.get_plan(initial_state)
+            ):
+                print("[Planner] processing skeleton {}".format(str(skeleton_index)))
+                self.env.set_sim_state(initial_state)
+                current_state = initial_state
+                self.plan = []
+                csp_fail = False
+                print("[Planner] Skeleton: " + str(abstract_actions))
+
+                for aai, aa in enumerate(abstract_actions):
+                    print(
+                        "[Planner] Planning for abstract action {}: {}".format(
+                            str(aai), str(aa)
+                        )
+                    )
+                    sequence = get_pick_place_plan(aa, env=self.env)
+                    if sequence is None:
+                        print("[Planner] Skeleton CSP failed")
+                        csp_fail = True
+                        break
+                    else:
+                        self.plan.append(sequence)
+
+                    current_state = self.env.step_abstract(current_state, aa)
+                if not csp_fail:
+                    break
+
+            if csp_fail:
                 print("[Planner] There does not exist a physically plausible tower")
                 sys.exit()
-            current_state = initial_state
-            self.plan = []
-            for aai, aa in enumerate(abstract_actions):
-                print(
-                    "[Planner] Planning for abstract action {}: {}".format(
-                        str(aai), str(aa)
-                    )
-                )
-                sequence = get_pick_place_plan(aa, current_state, env=self.env)
-                if sequence is None:
-                    print("[Planner] Skeleton CSP failed")
-                    sys.exit()
-                else:
-                    self.plan.append(sequence)
-
-                current_state = self.env.step_abstract(current_state, aa)
 
         elif len(self.plan) == 0:
             # No more actions left, terminate the policy
