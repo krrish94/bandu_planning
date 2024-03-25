@@ -159,10 +159,10 @@ def get_pick_place_plan(abstract_action, env, csp_debug=False):
 
 
 class SkeletonPlanner(Policy):
-    def __init__(self, env):
+    def __init__(self, env, use_sbi=False):
         self.env = env
         self.plan = None
-        self.use_sbi = False
+        self.use_sbi = use_sbi
         super().__init__()
 
     def planning_heuristic(self, initial_state, plan):
@@ -405,12 +405,12 @@ class SkeletonPlanner(Policy):
 
             # For each pair of blocks, fit an SBI model
             sbi_models = {}
-            for source_block_id in initial_state.block_ids:
-                for target_block_id in initial_state.block_ids:
+            for source_block_id in initial_state.block_ids+[initial_state.foundation]:
+                for target_block_id in initial_state.block_ids+[initial_state.foundation]:
                     if source_block_id == target_block_id:
                         continue
                     # Fit an SBI model for this pair of blocks
-                    fit_sbi_model_pairwise(
+                    sbi_model = fit_sbi_model_pairwise(
                         source_block_id,
                         target_block_id,
                         mass=0.5,  # unused, but preserved for legacy purposes
@@ -419,7 +419,6 @@ class SkeletonPlanner(Policy):
                         client=self.env.client,
                         prior_pose=None,  # unused, but preserved for legacy purposes
                         num_simulations=100,
-                        proposal=None,
                     )
                     sbi_models[(source_block_id, target_block_id)] = sbi_model
 
