@@ -12,10 +12,10 @@ CALIB_DIR = os.path.join(
     os.path.dirname(__file__), "../calibration/current_calibration/calib"
 )
 CAMERA_SNS = [
-    "103422071983",
+    # "103422071983",
     "027322071284",
     "050522073498",
-    "102422072672",
+    # "102422072672",
 ]
 
 

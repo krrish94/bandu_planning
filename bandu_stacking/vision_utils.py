@@ -1,17 +1,17 @@
 from __future__ import print_function
 
-import copy
 import os
 from collections import OrderedDict
 
 import numpy as np
-import torch
 
 import bandu_stacking.pb_utils as pbu
-from bandu_stacking.ucn.lib.fcn.config import cfg, cfg_from_file
-from bandu_stacking.ucn.lib.fcn.test_dataset import test_sample
-from bandu_stacking.ucn.lib.networks.SEG import seg_resnet34_8s_embedding
 import matplotlib.pyplot as plt
+from roipoly import RoiPoly
+import matplotlib.path as mpath
+from bandu_stacking.realsense_utils import CALIB_DIR
+from segment_anything import sam_model_registry, SamAutomaticMaskGenerator, SamPredictor
+
 
 UNKNOWN = "unknown"
 TABLE = "table"
@@ -84,10 +84,37 @@ def show_anns(anns):
         img[m] = color_mask
     ax.imshow(img)
 
-def get_seg_sam(image):
-    import sys
-    sys.path.append("..")
-    from segment_anything import sam_model_registry, SamAutomaticMaskGenerator, SamPredictor
+def mask_roi(camera_sn, camera_image):
+
+    mask_path = os.path.join(CALIB_DIR, f"{camera_sn}/mask.npy")
+    if(os.path.exists(mask_path)):
+        poly_verts = np.load(mask_path)
+    else:
+        fig = plt.figure()
+        plt.imshow(camera_image.rgbPixels, interpolation='nearest', cmap="Greys")
+        plt.show(block=False)
+
+        # Let user draw first ROI
+        roi1 = RoiPoly(color='r', fig=fig)
+
+        poly_verts = np.array([[(roi1.x[0], roi1.y[0])]
+                + list(zip(reversed(roi1.x), reversed(roi1.y)))])[0, :, :]
+        
+        np.save(mask_path, poly_verts)
+    
+    polygon_path = mpath.Path(poly_verts)
+    y, x = np.indices(camera_image.depthPixels.shape)
+
+    # Flatten the coordinate grid and create pairs of (x, y)
+    points = np.vstack((x.flatten(), y.flatten())).T
+
+    inside_polygon = polygon_path.contains_points(points)
+    mask = inside_polygon.reshape(camera_image.depthPixels.shape)
+    camera_image.rgbPixels[~mask] = 0
+    return camera_image
+
+def load_sam():
+
     checkpoint_path = os.path.abspath(os.path.join(__file__, *[os.pardir] * 2, "checkpoints"))
     sam_checkpoint = os.path.join(checkpoint_path, "sam_vit_h_4b8939.pth")
     model_type = "vit_h"
@@ -96,7 +123,11 @@ def get_seg_sam(image):
 
     sam = sam_model_registry[model_type](checkpoint=sam_checkpoint)
     sam.to(device=device)
+    return sam
 
+
+def get_seg_sam(sam, image):
+    
     mask_generator = SamAutomaticMaskGenerator(sam)
     masks = mask_generator.generate(image)
 

@@ -10,8 +10,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pybullet as p
 import pybullet_utils.bullet_client as bc
-from roipoly import RoiPoly
-import matplotlib.path as mpath
 import bandu_stacking.pb_utils as pbu
 from bandu_stacking.env_utils import (
     ARM_GROUP,
@@ -27,7 +25,7 @@ from bandu_stacking.env_utils import (
 )
 from bandu_stacking.policies.policy import State
 from bandu_stacking.realsense_utils import CALIB_DIR, CAMERA_SNS, get_camera_image
-from bandu_stacking.vision_utils import UCN, fuse_predicted_labels, save_camera_images, get_seg_sam
+from bandu_stacking.vision_utils import save_camera_images, get_seg_sam,mask_roi, load_sam
 
 BANDU_PATH = os.path.join(os.path.dirname(__file__), "models", "bandu_simplified")
 
@@ -122,9 +120,7 @@ class StackingEnvironment:
 
         self.block_size = 0.045
         if self.real_camera:
-            self.seg_network = UCN(
-                base_path=os.path.join(os.path.dirname(__file__), "ucn")
-            )
+            self.sam = load_sam()
 
             for camera_sn in CAMERA_SNS:
                 base_T_camera = np.load(
@@ -132,27 +128,10 @@ class StackingEnvironment:
                 )
                 camera_image = get_camera_image(camera_sn, base_T_camera)
 
-                fig = plt.figure()
-                plt.imshow(camera_image.rgbPixels, interpolation='nearest', cmap="Greys")
-                plt.show(block=False)
+                
+                camera_image = mask_roi(camera_sn, camera_image)
 
-                # Let user draw first ROI
-                roi1 = RoiPoly(color='r', fig=fig)
-
-                poly_verts = ([(roi1.x[0], roi1.y[0])]
-                      + list(zip(reversed(roi1.x), reversed(roi1.y))))
-               
-                polygon_path = mpath.Path(poly_verts)
-                y, x = np.indices(camera_image.depthPixels.shape)
-
-                # Flatten the coordinate grid and create pairs of (x, y)
-                points = np.vstack((x.flatten(), y.flatten())).T
-
-                inside_polygon = polygon_path.contains_points(points)
-                mask = inside_polygon.reshape(camera_image.depthPixels.shape)
-                camera_image.rgbPixels[~mask] = 0
-
-                masks = get_seg_sam(camera_image.rgbPixels)
+                masks = get_seg_sam(self.sam, camera_image.rgbPixels)
                 save_camera_images(camera_image, prefix=camera_sn)
 
         elif object_set == "blocks":
