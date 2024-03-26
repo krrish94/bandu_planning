@@ -126,30 +126,6 @@ class StackingEnvironment:
                 base_path=os.path.join(os.path.dirname(__file__), "ucn")
             )
 
-            # import open3d as o3d
-            # point_cloud = o3d.geometry.PointCloud()
-            # full_cloud = None
-            # for camera_sn in CAMERA_SNS:
-            #     base_T_camera = np.load(
-            #         os.path.join(CALIB_DIR, f"{camera_sn}/pose.npy")
-            #     )
-            #     camera_image = get_camera_image(camera_sn, base_T_camera)
-            #     cloud = cloud_from_depth(
-            #         camera_image.camera_matrix, camera_image.depthPixels
-            #     )
-            #     if(full_cloud is None):
-            #         full_cloud = cloud.reshape(-1, 3)
-            #     else:
-            #         full_cloud = np.concatenate([cloud.reshape(-1, 3), full_cloud], axis=0)
-            
-            # print(full_cloud.shape)
-            # point_cloud.points = o3d.utility.Vector3dVector(full_cloud)
-
-            # vis = o3d.visualization.Visualizer()
-            # vis.create_window()
-            # vis.add_geometry(point_cloud)
-            # vis.run()
-
             for camera_sn in CAMERA_SNS:
                 base_T_camera = np.load(
                     os.path.join(CALIB_DIR, f"{camera_sn}/pose.npy")
