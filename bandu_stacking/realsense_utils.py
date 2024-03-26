@@ -51,6 +51,7 @@ DEBUG this code to get the appropriate color and depth profile
 
 
 def get_profiles():
+    import pyrealsense2 as rs
     ctx = rs.context()
     devices = ctx.query_devices()
 
@@ -91,71 +92,32 @@ Capture the scene from a given pose (pose_index)
 def get_camera_image(serial_number, camera_pose):
     import pyrealsense2 as rs
 
-    rs_args = SimpleNamespace()
-    rs_args.realsense_preset = 1
-    rs_args.clipping_distance = 3
-    rs_args.frames_to_capture = 1
-    rs_args.render_images = False
-    rs_args.record_images = True
-    rs_args.color_profile = 14  # 42
-    rs_args.depth_profile = 5
-
-    # Create a pipeline -- use Open3D's implementation
+    # Configure depth and color streams
     pipeline = rs.pipeline()
-    # Create a config and configure the pipeline to stream
-    # different resolutions of color and depth streams
     config = rs.config()
-    config = rs.config()
-    config.enable_device(serial_number)
-    profile = config.resolve(pipeline)
-    # print(profile)
-    # quit()
-    color_profiles, depth_profiles = get_profiles()
-    # for _profile_to_print in color_profiles:
-    #     print(_profile_to_print)
+    if serial_number is not None:
+        config.enable_device(serial_number)
+    config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
+    config.enable_stream(rs.stream.color, 640, 480, rs.format.rgb8, 30)
 
-    # note: using 640 x 480 depth resolution produces smooth depth boundaries for manipulator experiments
-    # using rs.format.rgb8 for color image format for OpenCV based image visualization (to visualize properly --> convert color formatting scheme accordingly)
-    color_profile = color_profiles[rs_args.color_profile]
-    depth_profile = depth_profiles[rs_args.depth_profile]
-
-    print(f"Using the profiles: color: {color_profile}, depth: {depth_profile}")
-    # w, h, fps, fmt = depth_profile
-    # config.enable_stream(rs.stream.depth, w, h, fmt, fps)
-    # w, h, fps, fmt = color_profile
-    # config.enable_stream(rs.stream.color, w, h, fmt, fps)
     # Start streaming
-    profile = pipeline.start(config)
-    depth_sensor = profile.get_device().first_depth_sensor()
-    # Create an align object
-    # rs.align allows us to perform alignment of depth frames to others frames
-    # The "align_to" is the stream type to which we plan to align depth frames.
-    align_to = rs.stream.color
-    align = rs.align(align_to)
+    pipeline_profile = pipeline.start(config)
 
-    rgb, depth, intrinsics = realsense_capture(pipeline, profile, depth_sensor, align)
+    for _ in range(100):
+        # Wait for a coherent pair of frames: depth and color
+        frameset = pipeline.wait_for_frames()
+
+    align = rs.align(rs.stream.color)
+    frameset = align.process(frameset)
+
+    # Update color and depth frames:
+    aligned_depth_frame = frameset.get_depth_frame()
+    depth = np.asanyarray(aligned_depth_frame.get_data())
+    rgb = np.asanyarray(frameset.get_color_frame().get_data())
+
+    # And get the device info
+    print(f"Connected to {serial_number}")
+
+    intrinsics, _ = get_intrinsics(pipeline_profile, rs.stream.color)
+
     return CameraImage(rgb, depth / 1000.0, None, camera_pose, intrinsics)
-
-
-def realsense_capture(pipeline, profile, depth_sensor, align):
-    import pyrealsense2 as rs
-
-    # Streaming loop
-    print(f"Depth preset value : {depth_sensor.get_option(rs.option.visual_preset)}")
-
-    # Get frameset of color and depth
-    frames = pipeline.wait_for_frames(timeout_ms=10000)
-
-    # Align the depth frame to color frame
-    aligned_frames = align.process(frames)
-
-    # Get aligned frames
-    aligned_depth_frame = aligned_frames.get_depth_frame()
-    color_frame = aligned_frames.get_color_frame()
-
-    depth_image = np.asanyarray(aligned_depth_frame.get_data())
-    color_image = np.asanyarray(color_frame.get_data())
-
-    intrinsics, _ = get_intrinsics(profile, rs.stream.color)
-
-    return color_image, depth_image, intrinsics

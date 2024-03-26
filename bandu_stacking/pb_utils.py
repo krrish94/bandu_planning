@@ -1196,7 +1196,6 @@ def get_bodies(client=None, **kwargs):
 
 def save_image(filename, rgba):
     import imageio
-
     imageio.imwrite(filename, rgba)
 
 

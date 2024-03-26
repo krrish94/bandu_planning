@@ -6,11 +6,12 @@ import random
 import time
 from os import listdir
 from os.path import isfile, join
-
+import matplotlib.pyplot as plt
 import numpy as np
 import pybullet as p
 import pybullet_utils.bullet_client as bc
-
+from roipoly import RoiPoly
+import matplotlib.path as mpath
 import bandu_stacking.pb_utils as pbu
 from bandu_stacking.env_utils import (
     ARM_GROUP,
@@ -26,7 +27,7 @@ from bandu_stacking.env_utils import (
 )
 from bandu_stacking.policies.policy import State
 from bandu_stacking.realsense_utils import CALIB_DIR, CAMERA_SNS, get_camera_image
-from bandu_stacking.vision_utils import UCN, fuse_predicted_labels, save_camera_images
+from bandu_stacking.vision_utils import UCN, fuse_predicted_labels, save_camera_images, get_seg_sam
 
 BANDU_PATH = os.path.join(os.path.dirname(__file__), "models", "bandu_simplified")
 
@@ -125,15 +126,58 @@ class StackingEnvironment:
                 base_path=os.path.join(os.path.dirname(__file__), "ucn")
             )
 
+            # import open3d as o3d
+            # point_cloud = o3d.geometry.PointCloud()
+            # full_cloud = None
+            # for camera_sn in CAMERA_SNS:
+            #     base_T_camera = np.load(
+            #         os.path.join(CALIB_DIR, f"{camera_sn}/pose.npy")
+            #     )
+            #     camera_image = get_camera_image(camera_sn, base_T_camera)
+            #     cloud = cloud_from_depth(
+            #         camera_image.camera_matrix, camera_image.depthPixels
+            #     )
+            #     if(full_cloud is None):
+            #         full_cloud = cloud.reshape(-1, 3)
+            #     else:
+            #         full_cloud = np.concatenate([cloud.reshape(-1, 3), full_cloud], axis=0)
+            
+            # print(full_cloud.shape)
+            # point_cloud.points = o3d.utility.Vector3dVector(full_cloud)
+
+            # vis = o3d.visualization.Visualizer()
+            # vis.create_window()
+            # vis.add_geometry(point_cloud)
+            # vis.run()
+
             for camera_sn in CAMERA_SNS:
                 base_T_camera = np.load(
                     os.path.join(CALIB_DIR, f"{camera_sn}/pose.npy")
                 )
                 camera_image = get_camera_image(camera_sn, base_T_camera)
-                camera_image = fuse_predicted_labels(
-                    self.seg_network, camera_image, use_depth=True
-                )
-                save_camera_images(camera_image)
+
+                fig = plt.figure()
+                plt.imshow(camera_image.rgbPixels, interpolation='nearest', cmap="Greys")
+                plt.show(block=False)
+
+                # Let user draw first ROI
+                roi1 = RoiPoly(color='r', fig=fig)
+
+                poly_verts = ([(roi1.x[0], roi1.y[0])]
+                      + list(zip(reversed(roi1.x), reversed(roi1.y))))
+               
+                polygon_path = mpath.Path(poly_verts)
+                y, x = np.indices(camera_image.depthPixels.shape)
+
+                # Flatten the coordinate grid and create pairs of (x, y)
+                points = np.vstack((x.flatten(), y.flatten())).T
+
+                inside_polygon = polygon_path.contains_points(points)
+                mask = inside_polygon.reshape(camera_image.depthPixels.shape)
+                camera_image.rgbPixels[~mask] = 0
+
+                masks = get_seg_sam(camera_image.rgbPixels)
+                save_camera_images(camera_image, prefix=camera_sn)
 
         elif object_set == "blocks":
             for i in range(self.num_blocks):
