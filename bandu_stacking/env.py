@@ -156,11 +156,19 @@ class StackingEnvironment:
             visualize_multiple_pointclouds(filtered_pcds)
 
             for object_index, filtered_pcd in enumerate(filtered_pcds):
+                pcd_center = np.mean(filtered_pcd, axis=0)
+                print("PCD Center: "+str(pcd_center))
+                centered_pointcloud = filtered_pcd-pcd_center
+                mesh_path = os.path.join(self.save_dir, "mesh{}.obj".format(object_index))
                 pointcloud_to_mesh(
-                    filtered_pcd,
-                    os.path.join(self.save_dir, "mesh{}.obj".format(object_index)),
+                    centered_pointcloud,
+                    mesh_path,
                 )
+                new_block = pbu.load_pybullet(mesh_path, color=self._obj_colors[object_index % len(self._obj_colors)], client=self.client)
+                pbu.set_pose(new_block, pbu.Pose(pbu.Point(*(pcd_center.tolist()))), client=self.client)
+                self.block_ids.append(new_block)
 
+            pbu.wait_if_gui(client=self.client)
         elif object_set == "blocks":
             for i in range(self.num_blocks):
                 color = self._obj_colors[i % len(self._obj_colors)]
@@ -237,69 +245,69 @@ class StackingEnvironment:
         return self.sample_constrained_action(*blocks, mesh_dicts)
 
     def sample_state(self):
+        if(not self.real_camera):
+            # Add foundation object
+            self.client.removeBody(self.foundation)
+            self.foundation = self.client.loadURDF(
+                os.path.join(BANDU_PATH, "foundation.urdf"),
+                globalScaling=BANDU_SCALING,
+                useFixedBase=True,
+            )
+            self.foundation_pose = list(copy.deepcopy(TABLE_POSE))
+            self.foundation_pose[0] = list(self.foundation_pose[0])
+            self.foundation_pose[0][2] = (
+                pbu.get_aabb_extent(pbu.get_aabb(self.foundation, client=self.client))[2]
+                / 2.0
+            )
+            self.foundation_pose[0][0] += 0.05
+            self.foundation_pose[1] = pbu.quat_from_euler(pbu.Euler(yaw=np.pi / 2.0))
+            pbu.set_pose(self.foundation, self.foundation_pose, client=self.client)
+            pbu.wait_if_gui(client=self.client)
 
-        # Add foundation object
-        self.client.removeBody(self.foundation)
-        self.foundation = self.client.loadURDF(
-            os.path.join(BANDU_PATH, "foundation.urdf"),
-            globalScaling=BANDU_SCALING,
-            useFixedBase=True,
-        )
-        self.foundation_pose = list(copy.deepcopy(TABLE_POSE))
-        self.foundation_pose[0] = list(self.foundation_pose[0])
-        self.foundation_pose[0][2] = (
-            pbu.get_aabb_extent(pbu.get_aabb(self.foundation, client=self.client))[2]
-            / 2.0
-        )
-        self.foundation_pose[0][0] += 0.05
-        self.foundation_pose[1] = pbu.quat_from_euler(pbu.Euler(yaw=np.pi / 2.0))
-        pbu.set_pose(self.foundation, self.foundation_pose, client=self.client)
-        pbu.wait_if_gui(client=self.client)
+            # Add additional objects
+            if self.object_set == "bandu":
+                for object_id in self.block_ids:
+                    self.client.removeBody(object_id)
+                self.block_ids = self.add_bandu_objects()
+            elif self.object_set == "random":
+                for object_id in self.block_ids:
+                    self.client.removeBody(object_id)
+                self.block_ids = self.add_random_objects()
 
-        # Add additional objects
-        if self.object_set == "bandu":
-            for object_id in self.block_ids:
-                self.client.removeBody(object_id)
-            self.block_ids = self.add_bandu_objects()
-        elif self.object_set == "random":
-            for object_id in self.block_ids:
-                self.client.removeBody(object_id)
-            self.block_ids = self.add_random_objects()
+            for block_index, block_id in enumerate(self.block_ids):
+                found_collision_free = False
+                timeout = 10
+                x_padding = 0.15
+                y_padding = 0.2
+                while not found_collision_free or timeout > 0:
+                    timeout -= 1
 
-        for block_index, block_id in enumerate(self.block_ids):
-            found_collision_free = False
-            timeout = 10
-            x_padding = 0.15
-            y_padding = 0.2
-            while not found_collision_free or timeout > 0:
-                timeout -= 1
-
-                rx = random.uniform(
-                    TABLE_POSE[0][0] - self.table_width / 2.0 + x_padding,
-                    TABLE_POSE[0][0] + self.table_width / 2.0 - x_padding,
-                )
-                ry = random.uniform(
-                    TABLE_POSE[0][1] - self.table_length / 2.0 + y_padding,
-                    TABLE_POSE[0][1] + self.table_length / 2.0 - y_padding,
-                )
-                self.client.resetBasePositionAndOrientation(
-                    block_id,
-                    [rx, ry, self.table_height + self.block_size / 2.0],
-                    self._default_orn,
-                )
-                collision = False
-                for placed_block in self.block_ids[:block_index] + [self.foundation]:
-                    if pbu.pairwise_collision(
-                        block_id, placed_block, client=self.client, max_distance=0.03
-                    ):
-                        collision = True
+                    rx = random.uniform(
+                        TABLE_POSE[0][0] - self.table_width / 2.0 + x_padding,
+                        TABLE_POSE[0][0] + self.table_width / 2.0 - x_padding,
+                    )
+                    ry = random.uniform(
+                        TABLE_POSE[0][1] - self.table_length / 2.0 + y_padding,
+                        TABLE_POSE[0][1] + self.table_length / 2.0 - y_padding,
+                    )
+                    self.client.resetBasePositionAndOrientation(
+                        block_id,
+                        [rx, ry, self.table_height + self.block_size / 2.0],
+                        self._default_orn,
+                    )
+                    collision = False
+                    for placed_block in self.block_ids[:block_index] + [self.foundation]:
+                        if pbu.pairwise_collision(
+                            block_id, placed_block, client=self.client, max_distance=0.03
+                        ):
+                            collision = True
+                            break
+                    if not collision:
                         break
-                if not collision:
-                    break
 
-            if timeout <= 0:
-                print("Timeout setting block positions")
-                assert False
+                if timeout <= 0:
+                    print("Timeout setting block positions")
+                    assert False
 
         return self.state_from_sim()
 

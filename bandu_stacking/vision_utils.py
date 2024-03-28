@@ -18,6 +18,27 @@ import bandu_stacking.pb_utils as pbu
 from bandu_stacking.realsense_utils import CALIB_DIR
 
 
+
+def obj_file_from_mesh(mesh, under=True):
+    """
+    Creates a *.obj mesh string
+    :param mesh: tuple of list of vertices and list of faces
+    :return: *.obj mesh string
+    """
+    vertices, faces = mesh.vertices, mesh.triangles
+    s = 'g Mesh\n' # TODO: string writer
+    for v in vertices:
+        assert(len(v) == 3)
+        s += '\nv {}'.format(' '.join(map(str, v)))
+    for f in faces:
+        #assert(len(f) == 3) # Not necessarily true
+        f = [i+1 for i in f] # Assumes mesh is indexed from zero
+        s += '\nf {}'.format(' '.join(map(str, f)))
+        if under:
+            s += '\nf {}'.format(' '.join(map(str, reversed(f))))
+    return s
+
+
 def pointcloud_to_mesh(pcd_array, save_path):
     pcd = o3d.geometry.PointCloud()
     pcd.points = o3d.utility.Vector3dVector(pcd_array)
@@ -28,15 +49,10 @@ def pointcloud_to_mesh(pcd_array, save_path):
     alpha = 0.025
     mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_alpha_shape(pcd, alpha)
     mesh.compute_vertex_normals()
-    o3d.visualization.draw_geometries([mesh], mesh_show_back_face=True)
+    # o3d.visualization.draw_geometries([mesh], mesh_show_back_face=True)
 
     # create the triangular mesh with the vertices and faces from open3d
-    tri_mesh = trimesh.Trimesh(
-        np.asarray(mesh.vertices),
-        np.asarray(mesh.triangles),
-        vertex_normals=np.asarray(mesh.vertex_normals),
-    )
-    tri_mesh.export(save_path)
+    pbu.write(save_path, obj_file_from_mesh(mesh, under=True))
 
 
 def visualize_graph(G):
@@ -66,7 +82,7 @@ def visualize_graph(G):
     plt.show()
 
 
-def remove_statistical_outliers(pcd_array, nb_neighbors=75, std_ratio=0.02):
+def remove_statistical_outliers(pcd_array, nb_neighbors=100, std_ratio=0.01):
     """Remove statistical outliers from a point cloud.
 
     Parameters:
@@ -238,11 +254,10 @@ def depth_mask_to_point_clouds(camera_image: pbu.CameraImage, masks):
             A * pcd_points[:, 0] + B * pcd_points[:, 1] + C * pcd_points[:, 2] + D
         ) / np.sqrt(A**2 + B**2 + C**2)
         inliers = distances < table_inlier_thresh
-        print(np.mean(inliers))
         if np.mean(inliers) >= table_inlier_ratio:
             continue
 
-        mask_pointclouds.append(pcd_points)
+        mask_pointclouds.append(remove_statistical_outliers(pcd_points))
 
     # visualize_multiple_pointclouds(mask_pointclouds)
     print("Num pointclouds before merging: " + str(len(mask_pointclouds)))
