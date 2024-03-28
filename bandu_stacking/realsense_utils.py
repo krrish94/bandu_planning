@@ -52,6 +52,7 @@ DEBUG this code to get the appropriate color and depth profile
 
 def get_profiles():
     import pyrealsense2 as rs
+
     ctx = rs.context()
     devices = ctx.query_devices()
 
