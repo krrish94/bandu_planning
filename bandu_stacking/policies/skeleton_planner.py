@@ -65,9 +65,9 @@ def get_random_placement_pose(obj, surface_aabb, client):
 
 def get_pick_place_plan(abstract_action, env):
 
-    MAX_GRASP_ATTEMPTS = 10
-    MAX_PICK_ATTEMPTS = 10
-    MAX_PLACE_ATTEMPTS = 10
+    MAX_GRASP_ATTEMPTS = 50
+    MAX_PICK_ATTEMPTS = 3
+    MAX_PLACE_ATTEMPTS = 3
 
     client, robot = env.client, env.robot
     client = env.client
@@ -400,7 +400,7 @@ class SkeletonPlanner(Policy):
                     if source_block_id == target_block_id:
                         continue
                     # Fit an SBI model for this pair of blocks
-                    fit_sbi_model_pairwise(
+                    sbi_model = fit_sbi_model_pairwise(
                         source_block_id,
                         target_block_id,
                         mass=0.5,  # unused, but preserved for legacy purposes

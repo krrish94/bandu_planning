@@ -110,7 +110,7 @@ def plan_workspace_motion(
             tool_link,
             tool_waypoints[0],
             fixed_joints=fixed_joints,
-            max_attempts=5,
+            max_attempts=1,
             max_time=np.inf,
             max_distance=None,
             use_halton=False,
