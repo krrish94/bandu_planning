@@ -142,3 +142,5 @@ generated_videos
 **/checkpoints
 
 logs
+
+sbi-logs

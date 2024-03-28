@@ -31,6 +31,9 @@ def create_args():
         "--real-execute", action="store_true", help="Execute on the real robot"
     )
     parser.add_argument(
+        "--use-sbi", action="store_true", help="Execute on the real robot"
+    )
+    parser.add_argument(
         "--real-camera", action="store_true", help="Use real camera data"
     )
     parser.add_argument(
@@ -63,7 +66,7 @@ def main():
         real_camera=args.real_camera,
     )
 
-    policy = algorithms[args.algorithm](env)
+    policy = algorithms[args.algorithm](env, use_sbi=args.use_sbi)
     env.client.resetDebugVisualizerCamera(
         cameraDistance=1.5,
         cameraYaw=90,
@@ -89,9 +92,9 @@ def main():
         for _ in range(100):
             env.client.stepSimulation()
         for _ in range(args.max_steps):
-            # env.client.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
+            env.client.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
             a = policy.get_action(s)
-            # env.client.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
+            env.client.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
 
             if a is None:
                 break

@@ -77,7 +77,13 @@ def create_grasp_attachment(robot, grasp, **kwargs):
 
 
 def plan_workspace_motion(
-    robot, tool_waypoints, attachment=None, obstacles=[], max_attempts=1, **kwargs
+    robot,
+    tool_waypoints,
+    attachment=None,
+    obstacles=[],
+    max_attempts=1,
+    debug=False,
+    **kwargs,
 ):
     assert tool_waypoints
 
@@ -116,10 +122,15 @@ def plan_workspace_motion(
             use_halton=False,
             **kwargs,
         ):
+            if debug:
+                print("[plan_workspace_motion] Found IK solution")
             # TODO: can also explore multiple ways to proceed
             arm_conf = extract_arm_conf(arm_conf)
 
             if collision_fn(arm_conf):
+                if debug:
+                    print("[plan_workspace_motion] in collision (0)")
+                    pbu.wait_if_gui(**kwargs)
                 continue
             arm_waypoints = [arm_conf]
             for tool_pose in tool_waypoints[1:]:
@@ -145,6 +156,9 @@ def plan_workspace_motion(
 
                 arm_conf = extract_arm_conf(arm_conf)
                 if collision_fn(arm_conf):
+                    if debug:
+                        print("[plan_workspace_motion] in collision (1)")
+                        pbu.wait_if_gui(**kwargs)
                     continue
                 arm_waypoints.append(arm_conf)
             else:
@@ -163,12 +177,18 @@ def plan_workspace_motion(
                     )
                     and not DISABLE_ALL_COLLISIONS
                 ):
+                    if debug:
+                        print("[plan_workspace_motion] in collision (2)")
+                        pbu.wait_if_gui(**kwargs)
                     continue
                 arm_path = pbu.interpolate_joint_waypoints(
                     robot, arm_joints, arm_waypoints, **kwargs
                 )
 
                 if any(collision_fn(q) for q in arm_path):
+                    if debug:
+                        print("[plan_workspace_motion] in collision (3)")
+                        pbu.wait_if_gui(**kwargs)
                     continue
 
                 print(
@@ -227,7 +247,7 @@ def workspace_collision(
     return False
 
 
-def plan_prehensile(robot, obj, pose, grasp, environment=[], **kwargs):
+def plan_prehensile(robot, obj, pose, grasp, environment=[], debug=False, **kwargs):
 
     pose.assign(**kwargs)
 
@@ -236,7 +256,11 @@ def plan_prehensile(robot, obj, pose, grasp, environment=[], **kwargs):
     if workspace_collision(
         robot, gripper_path, grasp=None, obstacles=environment, **kwargs
     ):
+        if debug:
+            print("[plan_prehensile] workspace collision")
+        pbu.wait_if_gui(**kwargs)
         return None
+
     create_grasp_attachment(robot, grasp, **kwargs)
     arm_path = plan_workspace_motion(
         robot, gripper_waypoints, attachment=None, obstacles=environment, **kwargs

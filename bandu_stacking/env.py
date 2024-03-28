@@ -6,13 +6,13 @@ import random
 import time
 from os import listdir
 from os.path import isfile, join
-
+import matplotlib.pyplot as plt
 import numpy as np
 import pybullet as p
 import pybullet_utils.bullet_client as bc
-
 import bandu_stacking.pb_utils as pbu
 from bandu_stacking.env_utils import (
+    ARM_GROUP,
     PANDA_PATH,
     TABLE_AABB,
     TABLE_POSE,
@@ -21,10 +21,11 @@ from bandu_stacking.env_utils import (
     create_default_env,
     create_pybullet_block,
     get_absolute_pose,
+    get_current_confs,
 )
 from bandu_stacking.policies.policy import State
 from bandu_stacking.realsense_utils import CALIB_DIR, CAMERA_SNS, get_camera_image
-from bandu_stacking.vision_utils import UCN, fuse_predicted_labels, save_camera_images
+from bandu_stacking.vision_utils import save_camera_images, get_seg_sam,mask_roi, load_sam
 
 BANDU_PATH = os.path.join(os.path.dirname(__file__), "models", "bandu_simplified")
 
@@ -119,19 +120,19 @@ class StackingEnvironment:
 
         self.block_size = 0.045
         if self.real_camera:
-            self.seg_network = UCN(
-                base_path=os.path.join(os.path.dirname(__file__), "ucn")
-            )
+            self.sam = load_sam()
 
             for camera_sn in CAMERA_SNS:
                 base_T_camera = np.load(
                     os.path.join(CALIB_DIR, f"{camera_sn}/pose.npy")
                 )
                 camera_image = get_camera_image(camera_sn, base_T_camera)
-                camera_image = fuse_predicted_labels(
-                    self.seg_network, camera_image, use_depth=True
-                )
-                save_camera_images(camera_image)
+
+                
+                camera_image = mask_roi(camera_sn, camera_image)
+
+                masks = get_seg_sam(self.sam, camera_image.rgbPixels)
+                save_camera_images(camera_image, prefix=camera_sn)
 
         elif object_set == "blocks":
             for i in range(self.num_blocks):
@@ -223,6 +224,7 @@ class StackingEnvironment:
             pbu.get_aabb_extent(pbu.get_aabb(self.foundation, client=self.client))[2]
             / 2.0
         )
+        self.foundation_pose[0][0] += 0.05
         self.foundation_pose[1] = pbu.quat_from_euler(pbu.Euler(yaw=np.pi / 2.0))
         pbu.set_pose(self.foundation, self.foundation_pose, client=self.client)
         pbu.wait_if_gui(client=self.client)
@@ -279,12 +281,21 @@ class StackingEnvironment:
         for block in self.block_ids:
             pose = self.client.getBasePositionAndOrientation(block)
             block_poses[block] = pose
-        return State(self.block_ids, block_poses, foundation=self.foundation)
 
-    def set_sim_state(self, state):
+        current_conf = get_current_confs(self.robot, client=self.client)[ARM_GROUP]
+        return State(
+            self.block_ids,
+            block_poses,
+            foundation=self.foundation,
+            robot_conf=current_conf,
+        )
+
+    def set_sim_state(self, state: State):
         for block_id, block_pose in state.block_poses.items():
             (point, quat) = block_pose
             self.client.resetBasePositionAndOrientation(block_id, point, quat)
+        if state.robot_conf is not None:
+            state.robot_conf.assign(client=self.client)
 
     def state_diff(self, s1, s2):
         return sum(
@@ -296,14 +307,14 @@ class StackingEnvironment:
             ]
         )
 
-    def simulate_until_static(self, sim_freq=0, max_iter=100):
+    def simulate_until_static(self, sim_freq=0, max_iter=50):
         state_diff_thresh = 5e-4
 
         prev_state = self.state_from_sim()
         state_diff = float("inf")
         count = 0
         while state_diff > state_diff_thresh:
-            for _ in range(5):
+            for _ in range(10):
                 time.sleep(sim_freq)
                 self.client.stepSimulation()
             current_state = self.state_from_sim()

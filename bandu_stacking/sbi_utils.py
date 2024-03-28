@@ -33,7 +33,7 @@ def simulate_forward_model(block_id, mass, friction, restitution, client, prior_
     pos, ori = client.getBasePositionAndOrientation(block_id)
     # Get the AABB of the block before simulation and read the height (Z-coordinate).
     aabb_before = p.getAABB(block_id)
-    height_before = prior_aabb[1][2]
+    height_before = aabb_before[1][2]
     # Set the physical properties and pose for the block.
     client.changeDynamics(
         block_id,
@@ -57,72 +57,6 @@ def simulate_forward_model(block_id, mass, friction, restitution, client, prior_
     is_stable = height_change > 0
     return height_change, is_stable
 
-
-# Function to fit an SBI model (SNRE)
-def fit_sbi_model(
-    block_id,
-    mass,
-    friction,
-    restitution,
-    client,
-    prior_pose,
-    num_simulations=100,
-    proposal=None,
-):
-    """Fit an SBI model (SNRE)."""
-
-    # Define prior for mass, friction, restitution, and pose
-    prior = sbi_utils.BoxUniform(
-        low=torch.tensor([0.5, 0.1, 0.1, -np.pi]),
-        high=torch.tensor([1.0, 0.8, 0.4, np.pi]),
-    )
-
-    def simulate_fn(params):
-        pos, ori = client.getBasePositionAndOrientation(block_id)
-        # _mass, _friction, _restitution, _yaw = params
-        _mass = params[0].item()
-        _friction = params[1].item()
-        _restitution = params[2].item()
-        _yaw = params[3].item()
-        # Get the AABB of the block before simulation and read the height (Z-coordinate).
-        aabb_before = p.getAABB(block_id)
-        height_before = prior_aabb[1][2]
-        # Set the physical properties and pose for the block.
-        client.changeDynamics(
-            block_id,
-            -1,
-            mass=_mass,
-            lateralFriction=_friction,
-            restitution=_restitution,
-        )
-        # Set the pose of block block_id to the prior pose. 0.1 is added to Z-coordinate to
-        # simulate dropping the block from a height.
-        pos_new = (pos[0], pos[1], pos[2] + 0.1)
-        ori_old = p.getEulerFromQuaternion(ori)
-        ori_new = p.getQuaternionFromEuler([ori_old[0], ori_old[1], _yaw])
-        client.resetBasePositionAndOrientation(block_id, pos_new, ori_new)
-        # Run the simulation forward for a fixed number of steps.
-        for _ in range(100):
-            client.stepSimulation()
-        # Get the AABB and height of the block after simulation.
-        aabb_after = client.getAABB(block_id)
-        height_after = aabb_after[1][2]
-        height_change = height_after - height_before
-        # If the height change is positive, the block is stable.
-        is_stable = height_change > 0
-        return height_change, is_stable
-
-    inference = infer(
-        simulate_fn,
-        prior,
-        method="SNRE",
-        num_simulations=num_simulations,
-        # num_rounds=num_rounds,
-        proposal=proposal,
-    )
-    return inference
-
-
 # Replicate the above function, but allow to use a source_block_id and a target_block_id
 # (i.e., change states of two blocks) and run SBI like above.
 def fit_sbi_model_pairwise(
@@ -134,7 +68,6 @@ def fit_sbi_model_pairwise(
     client,
     prior_pose,
     num_simulations=100,
-    proposal=None,
 ):
     """Fit an SBI model (SNRE) for pairwise block stability."""
     # Define prior for mass, friction, restitution, and pose
@@ -152,7 +85,7 @@ def fit_sbi_model_pairwise(
         _yaw = params[3].item()
         # Get the AABB of the block before simulation and read the height (Z-coordinate).
         aabb_before = p.getAABB(source_block_id)
-        height_before = prior_aabb[1][2]
+        height_before = aabb_before[1][2]
         # Set the physical properties and pose for the block.
         client.changeDynamics(
             source_block_id,
@@ -181,19 +114,18 @@ def fit_sbi_model_pairwise(
         is_stable = height_change > 0
         return height_change, is_stable
 
-    inference = infer(
+    posterior = infer(
         simulate_fn,
         prior,
         method="SNRE",
         num_simulations=num_simulations,
         # num_rounds=num_rounds,
-        proposal=proposal,
     )
 
-    sampling_method = "mcmc"
-    mcmc_method = "slice_np"
-    posterior = inference.build_posterior(
-        sample_with=sampling_method, mcmc_method=mcmc_method
-    )
+    # sampling_method = "mcmc"
+    # mcmc_method = "slice_np"
+    # posterior = inference.build_posterior(
+    #     sample_with=sampling_method, mcmc_method=mcmc_method
+    # )
 
     return posterior
