@@ -31,6 +31,10 @@ from bandu_stacking.vision_utils import (
     load_sam,
     mask_roi,
     save_camera_images,
+    depth_mask_to_point_clouds,
+    merge_touching_pointclouds,
+    visualize_multiple_pointclouds,
+    remove_statistical_outliers
 )
 
 BANDU_PATH = os.path.join(os.path.dirname(__file__), "models", "bandu_simplified")
@@ -127,7 +131,7 @@ class StackingEnvironment:
         self.block_size = 0.045
         if self.real_camera:
             self.sam = load_sam()
-
+            all_pcds = []
             for camera_sn in CAMERA_SNS:
                 base_T_camera = np.load(
                     os.path.join(CALIB_DIR, f"{camera_sn}/pose.npy")
@@ -138,8 +142,13 @@ class StackingEnvironment:
                 camera_image.segmentationMaskBuffer = (
                     seg_image[:, :, :3] * 255
                 ).astype(np.uint8)
-                camera_image.camera_pose = base_T_camera
+                camera_image.camera_pose = pbu.pose_from_tform(base_T_camera)
+                all_pcds += depth_mask_to_point_clouds(camera_image, masks)
                 save_camera_images(camera_image, prefix=camera_sn)
+
+            merged_pcds = merge_touching_pointclouds(all_pcds)
+            filtered_pcds = [remove_statistical_outliers(pcd) for pcd in merged_pcds]
+            visualize_multiple_pointclouds(filtered_pcds)
 
         elif object_set == "blocks":
             for i in range(self.num_blocks):

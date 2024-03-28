@@ -11,7 +11,7 @@ import open3d as o3d
 from roipoly import RoiPoly
 from scipy.spatial.distance import cdist
 from segment_anything import SamAutomaticMaskGenerator, sam_model_registry
-
+import networkx as nx
 import bandu_stacking.pb_utils as pbu
 from bandu_stacking.realsense_utils import CALIB_DIR
 
@@ -20,7 +20,46 @@ TABLE = "table"
 SPECIAL_CATEGORIES = {None: pbu.BLACK, UNKNOWN: pbu.GREY, TABLE: pbu.WHITE}
 
 
-def merge_touching_pointclouds(pointclouds, distance_threshold=0.05):
+
+def visualize_graph(G):
+    """
+    Visualizes a graph using networkx and matplotlib.
+
+    Parameters:
+    - G: A networkx Graph object.
+    """
+    # Position nodes using the spring layout
+    pos = nx.spring_layout(G)
+    
+    # Draw the graph
+    plt.figure(figsize=(8, 6))
+    nx.draw(G, pos, with_labels=True, node_color='skyblue', node_size=700, 
+            edge_color='k', linewidths=1, font_size=15, 
+            arrows=True, arrowsize=20)
+    plt.title("Graph Visualization")
+    plt.show()
+
+def remove_statistical_outliers(pcd_array, nb_neighbors=100, std_ratio=0.01):
+    """
+    Remove statistical outliers from a point cloud.
+    
+    Parameters:
+    - pcd: Open3D point cloud object.
+    - nb_neighbors: Number of neighbors to consider for computing the average distance.
+    - std_ratio: Standard deviation ratio; points with a distance larger than this ratio will be removed.
+    
+    Returns:
+    - Cleaned point cloud after outlier removal.
+    - Indices of the inlier points.
+    """
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(pcd_array)
+    cleaned_pcd, _ = pcd.remove_statistical_outlier(nb_neighbors=nb_neighbors,
+                                                      std_ratio=std_ratio)
+    return np.asarray(cleaned_pcd.points)
+
+
+def merge_touching_pointclouds(pointclouds, distance_threshold=0.01):
     """Merges point clouds that are touching based on a distance threshold.
 
     Parameters:
@@ -34,7 +73,7 @@ def merge_touching_pointclouds(pointclouds, distance_threshold=0.05):
     def are_touching(pcd1, pcd2, threshold):
         """Check if two point clouds are touching based on the threshold."""
         # Compute the minimum distance between any two points in the point clouds
-        dists = cdist(np.asarray(pcd1.points), np.asarray(pcd2.points), "euclidean")
+        dists = cdist(np.asarray(pcd1), np.asarray(pcd2), "euclidean")
         min_dist = np.min(dists)
         return min_dist < threshold
 
@@ -50,19 +89,59 @@ def merge_touching_pointclouds(pointclouds, distance_threshold=0.05):
     from networkx import Graph, connected_components
 
     G = Graph()
+    G.add_nodes_from(list(range(num_pcds)))
     G.add_edges_from(edges)
+
+    # visualize_graph(G)
+
     components = list(connected_components(G))
 
     # Merge point clouds in each connected component
     merged_pointclouds = []
     for component in components:
-        merged_pcd = o3d.geometry.PointCloud()
-        for index in component:
-            merged_pcd += pointclouds[index]
-        merged_pointclouds.append(merged_pcd)
+        merged_pointclouds.append(np.concatenate([pointclouds[index] for index in component]))
+
+    print("Num pointclouds after merging: "+str(len(merged_pointclouds)))
+
+    # visualize_multiple_pointclouds(merged_pointclouds)
 
     return merged_pointclouds
 
+
+def visualize_multiple_pointclouds(pointclouds_np, colors=None):
+    """
+    Visualizes multiple point clouds, each with a different color.
+
+    Parameters:
+    - pointclouds_np: List of point clouds as numpy arrays of shape (N, 3).
+    - colors: Optional. List of colors for each point cloud. If None, random colors are assigned.
+    
+    Each point cloud in the list is converted to an Open3D PointCloud object,
+    assigned a unique color, and visualized together.
+    """
+    # Create a visualization window
+    vis = o3d.visualization.Visualizer()
+    vis.create_window()
+
+    for i, pc_np in enumerate(pointclouds_np):
+        # Convert numpy array to Open3D point cloud
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(pc_np)
+        
+        # Assign color
+        if colors is None:
+            # Generate a random color if none is provided
+            color = np.random.rand(3)
+        else:
+            color = colors[i]
+        pcd.paint_uniform_color(color)  # Set the color for the point cloud
+        
+        # Add the point cloud to the visualization
+        vis.add_geometry(pcd)
+
+    # Run the visualization
+    vis.run()
+    vis.destroy_window()
 
 def depth_mask_to_point_clouds(camera_image: pbu.CameraImage, masks):
     """Convert a depth image to point clouds for each mask.
@@ -92,54 +171,52 @@ def depth_mask_to_point_clouds(camera_image: pbu.CameraImage, masks):
         cx=cx,
         cy=cy,
     )
+    
+    # Apply transformation based on camera pose
+    R = pbu.tform_from_pose(camera_image.camera_pose)
+    
 
     # Create a point cloud from the depth image
     pcd = o3d.geometry.PointCloud.create_from_depth_image(depth_o3d, intrinsics)
+    pcd.transform(R)
     table_inlier_thresh = 0.01
     plane_model, _ = pcd.segment_plane(
         distance_threshold=table_inlier_thresh, ransac_n=3, num_iterations=1000
     )
 
-    # Apply transformation based on camera pose
-    # Assuming camera_pose is (euler angles, quaternion)
-    euler, quaternion = camera_image.camera_pose
-    if quaternion:  # If quaternion is provided
-        R = o3d.geometry.get_rotation_matrix_from_quaternion(quaternion)
-    else:  # Convert euler angles to rotation matrix
-        R = o3d.geometry.get_rotation_matrix_from_xyz(euler)
-    transformation_matrix = np.eye(4)
-    transformation_matrix[:3, :3] = R
-    pcd.transform(transformation_matrix)
 
     # Apply masks and extract individual point clouds
     mask_pointclouds = []
     for mask in masks:
-        # Convert mask to boolean array
-        mask_bool = mask.astype(bool)
 
-        # Extract points corresponding to the mask
-        points = np.asarray(pcd.points)[mask_bool.flatten(), :]
-        mask_pcd = o3d.geometry.PointCloud()
-        mask_pcd.points = o3d.utility.Vector3dVector(points)
+        mask_bool = mask['segmentation'].astype(bool)
+        masked_depth = np.where(mask_bool, depth_o3d, 0)
+        depth_image_o3d = o3d.geometry.Image(masked_depth.astype(np.float32))
+        pcd = o3d.geometry.PointCloud.create_from_depth_image(depth_image_o3d, intrinsics)
+        pcd.transform(R)
+
+        pcd_points = np.asarray(pcd.points)
 
         # Reject adding this cluster if there are not enough points
         min_cluster_points = 50
-        if points.shape[0] < min_cluster_points:
+        if pcd_points.shape[0] < min_cluster_points:
             continue
 
         # If a large percent of the cluster are inliers on the table plane, we reject the cluster
         A, B, C, D = plane_model
         table_inlier_ratio = 0.8
         distances = np.abs(
-            A * points[:, 0] + B * points[:, 1] + C * points[:, 2] + D
+            A * pcd_points[:, 0] + B * pcd_points[:, 1] + C * pcd_points[:, 2] + D
         ) / np.sqrt(A**2 + B**2 + C**2)
         inliers = distances < table_inlier_thresh
+        print(np.mean(inliers) )
         if np.mean(inliers) >= table_inlier_ratio:
             continue
 
-        mask_pointclouds.append(mask_pcd)
+        mask_pointclouds.append(pcd_points)
 
-    print("Num clusters: " + str(len(mask_pointclouds)))
+    # visualize_multiple_pointclouds(mask_pointclouds)
+    print("Num pointclouds before merging: " + str(len(mask_pointclouds)))
 
     return mask_pointclouds
 
@@ -253,6 +330,7 @@ def mask_roi(camera_sn, camera_image):
     inside_polygon = polygon_path.contains_points(points)
     mask = inside_polygon.reshape(camera_image.depthPixels.shape)
     camera_image.rgbPixels[~mask] = 0
+    camera_image.depthPixels[~mask] = 0
     return camera_image
 
 
