@@ -6,7 +6,6 @@ import random
 import time
 from os import listdir
 from os.path import isfile, join
-import matplotlib.pyplot as plt
 import numpy as np
 import pybullet as p
 import pybullet_utils.bullet_client as bc
@@ -132,6 +131,7 @@ class StackingEnvironment:
                 camera_image = mask_roi(camera_sn, camera_image)
 
                 masks = get_seg_sam(self.sam, camera_image.rgbPixels)
+                
                 save_camera_images(camera_image, prefix=camera_sn)
 
         elif object_set == "blocks":

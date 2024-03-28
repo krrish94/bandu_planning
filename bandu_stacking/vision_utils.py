@@ -10,13 +10,134 @@ import matplotlib.pyplot as plt
 from roipoly import RoiPoly
 import matplotlib.path as mpath
 from bandu_stacking.realsense_utils import CALIB_DIR
-from segment_anything import sam_model_registry, SamAutomaticMaskGenerator, SamPredictor
+from segment_anything import sam_model_registry, SamAutomaticMaskGenerator
+import open3d as o3d
+from typing import List
+from scipy.spatial.distance import cdist
 
 
 UNKNOWN = "unknown"
 TABLE = "table"
 SPECIAL_CATEGORIES = {None: pbu.BLACK, UNKNOWN: pbu.GREY, TABLE: pbu.WHITE}
 
+
+
+def merge_touching_pointclouds(pointclouds, distance_threshold=0.05):
+    """
+    Merges point clouds that are touching based on a distance threshold.
+
+    Parameters:
+    - pointclouds: List of Open3D point cloud objects.
+    - distance_threshold: Distance threshold to consider point clouds as touching.
+
+    Returns:
+    - List of merged Open3D point cloud objects.
+    """
+
+    def are_touching(pcd1, pcd2, threshold):
+        """Check if two point clouds are touching based on the threshold."""
+        # Compute the minimum distance between any two points in the point clouds
+        dists = cdist(np.asarray(pcd1.points), np.asarray(pcd2.points), 'euclidean')
+        min_dist = np.min(dists)
+        return min_dist < threshold
+
+    # Create a graph where an edge represents that point clouds are touching
+    num_pcds = len(pointclouds)
+    edges = []
+    for i in range(num_pcds):
+        for j in range(i + 1, num_pcds):
+            if are_touching(pointclouds[i], pointclouds[j], distance_threshold):
+                edges.append((i, j))
+
+    # Find connected components in the graph
+    from networkx import Graph, connected_components
+    G = Graph()
+    G.add_edges_from(edges)
+    components = list(connected_components(G))
+
+    # Merge point clouds in each connected component
+    merged_pointclouds = []
+    for component in components:
+        merged_pcd = o3d.geometry.PointCloud()
+        for index in component:
+            merged_pcd += pointclouds[index]
+        merged_pointclouds.append(merged_pcd)
+
+    return merged_pointclouds
+
+def depth_mask_to_point_clouds(camera_image:pbu.CameraImage, masks):
+    """
+    Convert a depth image to point clouds for each mask.
+
+    Parameters:
+    - depth_image: numpy array (HxWx1), the depth image.
+    - masks: List of numpy arrays (HxWx1), each representing a binary mask for an object.
+    - camera_pose: Tuple containing camera pose (Euler angles, Quaternion).
+    - camera_intrinsics: Dictionary containing camera intrinsic parameters
+                         such as 'fx', 'fy', 'cx', 'cy'.
+
+    Returns:
+    - List of Open3D point cloud objects, each corresponding to a mask.
+    """
+    # Create Open3D depth image from numpy array
+    depth_o3d = o3d.geometry.Image(camera_image.depthPixels.astype(np.float32))
+
+    # Create Open3D intrinsic object
+    camera_matrix = camera_image.camera_matrix
+    fx, fy = camera_matrix[0, 0], camera_matrix[1, 1]
+    cx, cy = camera_matrix[0, 2], camera_matrix[1, 2]
+    intrinsics = o3d.camera.PinholeCameraIntrinsic(width=camera_image.depthPixels.shape[1],
+                                                   height=camera_image.depthPixels.shape[0],
+                                                   fx=fx, fy=fy, cx=cx, cy=cy)
+
+    # Create a point cloud from the depth image
+    pcd = o3d.geometry.PointCloud.create_from_depth_image(depth_o3d, intrinsics)
+    table_inlier_thresh = 0.01
+    plane_model, _ = pcd.segment_plane(distance_threshold=table_inlier_thresh,
+                                             ransac_n=3,
+                                             num_iterations=1000)
+        
+    # Apply transformation based on camera pose
+    # Assuming camera_pose is (euler angles, quaternion)
+    euler, quaternion = camera_image.camera_pose
+    if quaternion:  # If quaternion is provided
+        R = o3d.geometry.get_rotation_matrix_from_quaternion(quaternion)
+    else:  # Convert euler angles to rotation matrix
+        R = o3d.geometry.get_rotation_matrix_from_xyz(euler)
+    transformation_matrix = np.eye(4)
+    transformation_matrix[:3, :3] = R
+    pcd.transform(transformation_matrix)
+
+    # Apply masks and extract individual point clouds
+    mask_pointclouds = []
+    for mask in masks:
+        # Convert mask to boolean array
+        mask_bool = mask.astype(bool)
+
+        # Extract points corresponding to the mask
+        points = np.asarray(pcd.points)[mask_bool.flatten(), :]
+        mask_pcd = o3d.geometry.PointCloud()
+        mask_pcd.points = o3d.utility.Vector3dVector(points)
+        
+
+        # Reject adding this cluster if there are not enough points
+        min_cluster_points = 50
+        if(points.shape[0]<min_cluster_points):
+            continue
+
+        # If a large percent of the cluster are inliers on the table plane, we reject the cluster
+        A, B, C, D = plane_model
+        table_inlier_ratio = 0.8
+        distances = np.abs(A*points[:, 0] + B*points[:, 1] + C*points[:, 2] + D) / np.sqrt(A**2 + B**2 + C**2)
+        inliers = distances < table_inlier_thresh
+        if np.mean(inliers) >= table_inlier_ratio:
+            continue
+            
+        mask_pointclouds.append(mask_pcd)
+
+    print("Num clusters: "+str(len(mask_pointclouds)))
+
+    return mask_pointclouds
 
 def image_from_labeled(seg_image, **kwargs):
 
