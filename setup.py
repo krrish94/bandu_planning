@@ -25,6 +25,6 @@ setup(
         "opencv-python==4.9.0.80",
         "pyrealsense2==2.54.2.5684",
         "torch",
-        "torchvision"
+        "torchvision",
     ],
 )

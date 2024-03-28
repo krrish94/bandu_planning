@@ -6,56 +6,83 @@ from typing import List
 
 import matplotlib.path as mpath
 import matplotlib.pyplot as plt
+import networkx as nx
 import numpy as np
 import open3d as o3d
+import trimesh
 from roipoly import RoiPoly
 from scipy.spatial.distance import cdist
 from segment_anything import SamAutomaticMaskGenerator, sam_model_registry
-import networkx as nx
+
 import bandu_stacking.pb_utils as pbu
 from bandu_stacking.realsense_utils import CALIB_DIR
 
-UNKNOWN = "unknown"
-TABLE = "table"
-SPECIAL_CATEGORIES = {None: pbu.BLACK, UNKNOWN: pbu.GREY, TABLE: pbu.WHITE}
 
+def pointcloud_to_mesh(pcd_array, save_path):
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(pcd_array)
+
+    if not pcd.has_normals():
+        pcd.estimate_normals()
+
+    alpha = 0.025
+    mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_alpha_shape(pcd, alpha)
+    mesh.compute_vertex_normals()
+    o3d.visualization.draw_geometries([mesh], mesh_show_back_face=True)
+
+    # create the triangular mesh with the vertices and faces from open3d
+    tri_mesh = trimesh.Trimesh(
+        np.asarray(mesh.vertices),
+        np.asarray(mesh.triangles),
+        vertex_normals=np.asarray(mesh.vertex_normals),
+    )
+    tri_mesh.export(save_path)
 
 
 def visualize_graph(G):
-    """
-    Visualizes a graph using networkx and matplotlib.
+    """Visualizes a graph using networkx and matplotlib.
 
     Parameters:
     - G: A networkx Graph object.
     """
     # Position nodes using the spring layout
     pos = nx.spring_layout(G)
-    
+
     # Draw the graph
     plt.figure(figsize=(8, 6))
-    nx.draw(G, pos, with_labels=True, node_color='skyblue', node_size=700, 
-            edge_color='k', linewidths=1, font_size=15, 
-            arrows=True, arrowsize=20)
+    nx.draw(
+        G,
+        pos,
+        with_labels=True,
+        node_color="skyblue",
+        node_size=700,
+        edge_color="k",
+        linewidths=1,
+        font_size=15,
+        arrows=True,
+        arrowsize=20,
+    )
     plt.title("Graph Visualization")
     plt.show()
 
-def remove_statistical_outliers(pcd_array, nb_neighbors=100, std_ratio=0.01):
-    """
-    Remove statistical outliers from a point cloud.
-    
+
+def remove_statistical_outliers(pcd_array, nb_neighbors=75, std_ratio=0.02):
+    """Remove statistical outliers from a point cloud.
+
     Parameters:
     - pcd: Open3D point cloud object.
     - nb_neighbors: Number of neighbors to consider for computing the average distance.
     - std_ratio: Standard deviation ratio; points with a distance larger than this ratio will be removed.
-    
+
     Returns:
     - Cleaned point cloud after outlier removal.
     - Indices of the inlier points.
     """
     pcd = o3d.geometry.PointCloud()
     pcd.points = o3d.utility.Vector3dVector(pcd_array)
-    cleaned_pcd, _ = pcd.remove_statistical_outlier(nb_neighbors=nb_neighbors,
-                                                      std_ratio=std_ratio)
+    cleaned_pcd, _ = pcd.remove_statistical_outlier(
+        nb_neighbors=nb_neighbors, std_ratio=std_ratio
+    )
     return np.asarray(cleaned_pcd.points)
 
 
@@ -99,9 +126,11 @@ def merge_touching_pointclouds(pointclouds, distance_threshold=0.01):
     # Merge point clouds in each connected component
     merged_pointclouds = []
     for component in components:
-        merged_pointclouds.append(np.concatenate([pointclouds[index] for index in component]))
+        merged_pointclouds.append(
+            np.concatenate([pointclouds[index] for index in component])
+        )
 
-    print("Num pointclouds after merging: "+str(len(merged_pointclouds)))
+    print("Num pointclouds after merging: " + str(len(merged_pointclouds)))
 
     # visualize_multiple_pointclouds(merged_pointclouds)
 
@@ -109,13 +138,12 @@ def merge_touching_pointclouds(pointclouds, distance_threshold=0.01):
 
 
 def visualize_multiple_pointclouds(pointclouds_np, colors=None):
-    """
-    Visualizes multiple point clouds, each with a different color.
+    """Visualizes multiple point clouds, each with a different color.
 
     Parameters:
     - pointclouds_np: List of point clouds as numpy arrays of shape (N, 3).
     - colors: Optional. List of colors for each point cloud. If None, random colors are assigned.
-    
+
     Each point cloud in the list is converted to an Open3D PointCloud object,
     assigned a unique color, and visualized together.
     """
@@ -127,7 +155,7 @@ def visualize_multiple_pointclouds(pointclouds_np, colors=None):
         # Convert numpy array to Open3D point cloud
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(pc_np)
-        
+
         # Assign color
         if colors is None:
             # Generate a random color if none is provided
@@ -135,13 +163,14 @@ def visualize_multiple_pointclouds(pointclouds_np, colors=None):
         else:
             color = colors[i]
         pcd.paint_uniform_color(color)  # Set the color for the point cloud
-        
+
         # Add the point cloud to the visualization
         vis.add_geometry(pcd)
 
     # Run the visualization
     vis.run()
     vis.destroy_window()
+
 
 def depth_mask_to_point_clouds(camera_image: pbu.CameraImage, masks):
     """Convert a depth image to point clouds for each mask.
@@ -171,10 +200,9 @@ def depth_mask_to_point_clouds(camera_image: pbu.CameraImage, masks):
         cx=cx,
         cy=cy,
     )
-    
+
     # Apply transformation based on camera pose
     R = pbu.tform_from_pose(camera_image.camera_pose)
-    
 
     # Create a point cloud from the depth image
     pcd = o3d.geometry.PointCloud.create_from_depth_image(depth_o3d, intrinsics)
@@ -184,15 +212,16 @@ def depth_mask_to_point_clouds(camera_image: pbu.CameraImage, masks):
         distance_threshold=table_inlier_thresh, ransac_n=3, num_iterations=1000
     )
 
-
     # Apply masks and extract individual point clouds
     mask_pointclouds = []
     for mask in masks:
 
-        mask_bool = mask['segmentation'].astype(bool)
+        mask_bool = mask["segmentation"].astype(bool)
         masked_depth = np.where(mask_bool, depth_o3d, 0)
         depth_image_o3d = o3d.geometry.Image(masked_depth.astype(np.float32))
-        pcd = o3d.geometry.PointCloud.create_from_depth_image(depth_image_o3d, intrinsics)
+        pcd = o3d.geometry.PointCloud.create_from_depth_image(
+            depth_image_o3d, intrinsics
+        )
         pcd.transform(R)
 
         pcd_points = np.asarray(pcd.points)
@@ -209,7 +238,7 @@ def depth_mask_to_point_clouds(camera_image: pbu.CameraImage, masks):
             A * pcd_points[:, 0] + B * pcd_points[:, 1] + C * pcd_points[:, 2] + D
         ) / np.sqrt(A**2 + B**2 + C**2)
         inliers = distances < table_inlier_thresh
-        print(np.mean(inliers) )
+        print(np.mean(inliers))
         if np.mean(inliers) >= table_inlier_ratio:
             continue
 
@@ -219,31 +248,6 @@ def depth_mask_to_point_clouds(camera_image: pbu.CameraImage, masks):
     print("Num pointclouds before merging: " + str(len(mask_pointclouds)))
 
     return mask_pointclouds
-
-
-def image_from_labeled(seg_image, **kwargs):
-
-    # TODO: order special colors
-    # TODO: adjust saturation and value per category
-    # labels = sorted(set(get_bodies()) | set(seg_image[..., 0].flatten()))
-    labels_instance = set(seg_image[..., 1].flatten())
-    detect_obj_labels = sorted(
-        label for label in labels_instance if (label not in SPECIAL_CATEGORIES)
-    )
-    labels = detect_obj_labels
-    color_from_body = OrderedDict(zip(labels, pbu.spaced_colors(len(labels))))
-    color_from_body.update(SPECIAL_CATEGORIES)
-
-    image = np.zeros(seg_image.shape[:2] + (3,))
-    for r in range(seg_image.shape[0]):
-        for c in range(seg_image.shape[1]):
-            category, instance = seg_image[r, c, :]
-            if category in color_from_body:  # SPECIAL_CATEGORIES:
-                color = color_from_body[category]
-            else:
-                color = color_from_body[instance]
-            image[r, c, :] = color[:3]
-    return (image * 255).astype(np.uint8)
 
 
 def save_camera_images(

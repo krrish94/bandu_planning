@@ -27,14 +27,15 @@ from bandu_stacking.env_utils import (
 from bandu_stacking.policies.policy import State
 from bandu_stacking.realsense_utils import CALIB_DIR, CAMERA_SNS, get_camera_image
 from bandu_stacking.vision_utils import (
+    depth_mask_to_point_clouds,
     get_seg_sam,
     load_sam,
     mask_roi,
-    save_camera_images,
-    depth_mask_to_point_clouds,
     merge_touching_pointclouds,
+    pointcloud_to_mesh,
+    remove_statistical_outliers,
+    save_camera_images,
     visualize_multiple_pointclouds,
-    remove_statistical_outliers
 )
 
 BANDU_PATH = os.path.join(os.path.dirname(__file__), "models", "bandu_simplified")
@@ -65,6 +66,7 @@ class StackingEnvironment:
         disable_robot=False,
         real_camera=False,
         real_execute=False,
+        save_dir="./logs",
     ):
 
         self.num_blocks = num_blocks
@@ -72,6 +74,7 @@ class StackingEnvironment:
         self.disable_robot = disable_robot
         self.disable_gui = disable_gui
         self.real_camera = real_camera
+        self.save_dir = save_dir
 
         if not self.disable_gui:
             self.client = bc.BulletClient(connection_mode=p.GUI)
@@ -144,11 +147,19 @@ class StackingEnvironment:
                 ).astype(np.uint8)
                 camera_image.camera_pose = pbu.pose_from_tform(base_T_camera)
                 all_pcds += depth_mask_to_point_clouds(camera_image, masks)
-                save_camera_images(camera_image, prefix=camera_sn)
+                save_camera_images(
+                    camera_image, prefix=camera_sn, directory=self.save_dir
+                )
 
             merged_pcds = merge_touching_pointclouds(all_pcds)
             filtered_pcds = [remove_statistical_outliers(pcd) for pcd in merged_pcds]
             visualize_multiple_pointclouds(filtered_pcds)
+
+            for object_index, filtered_pcd in enumerate(filtered_pcds):
+                pointcloud_to_mesh(
+                    filtered_pcd,
+                    os.path.join(self.save_dir, "mesh{}.obj".format(object_index)),
+                )
 
         elif object_set == "blocks":
             for i in range(self.num_blocks):

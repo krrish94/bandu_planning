@@ -1,5 +1,9 @@
 import argparse
 import datetime
+import logging
+import os
+import sys
+import time
 
 import numpy as np
 import pybullet as p
@@ -14,6 +18,48 @@ algorithms = {"random": RandomPolicy, "skeleton_planner": SkeletonPlanner}
 object_sets = ["blocks", "bandu", "random"]
 
 
+class StreamToLogger:
+    def __init__(self, logger, log_level):
+        self.logger = logger
+        self.log_level = log_level
+        self.linebuf = ""
+
+    def write(self, buf):
+        for line in buf.rstrip().splitlines():
+            self.logger.log(self.log_level, line.rstrip())
+
+    def flush(self):
+        pass
+
+
+def setup_logger(save_dir):
+    # Create a logs folder if it doesn't exist
+    if not os.path.exists(os.path.join(save_dir, "logs")):
+        os.makedirs(os.path.join(save_dir, "logs"))
+
+    log_level = logging.DEBUG
+    logging.basicConfig(
+        level=log_level,
+        format="%(message)s",
+        handlers=[
+            logging.FileHandler(os.path.join(save_dir, "logs", f"{time.time()}.log"))
+        ],
+    )
+
+    logger = logging.getLogger()
+
+    # Add StreamHandler to logger to output logs to stdout
+    ch = logging.StreamHandler(sys.stdout)
+    ch.setLevel(log_level)
+    formatter = logging.Formatter("%(message)s")
+    ch.setFormatter(formatter)
+    logger.addHandler(ch)
+
+    # Redirect stdout and stderr
+    sys.stdout = StreamToLogger(logger, log_level)
+    sys.stderr = StreamToLogger(logger, logging.ERROR)
+
+
 def create_args():
     """Creates the arguments for the experiment."""
 
@@ -26,6 +72,11 @@ def create_args():
         "--disable-robot",
         action="store_true",
         help="Do not load in the robot or do any constraint satisfaction planning",
+    )
+    parser.add_argument(
+        "--save-dir",
+        help="File to load from",
+        default="logs/run{}".format(str(time.time())),
     )
     parser.add_argument(
         "--real-execute", action="store_true", help="Execute on the real robot"
@@ -55,6 +106,8 @@ def create_args():
 def main():
     args = create_args()
 
+    setup_logger(args.save_dir)
+
     if args.real_execute:
         raise NotImplementedError
 
@@ -64,6 +117,7 @@ def main():
         disable_gui=args.disable_gui,
         disable_robot=args.disable_robot,
         real_camera=args.real_camera,
+        save_dir=args.save_dir,
     )
 
     policy = algorithms[args.algorithm](env, use_sbi=args.use_sbi)
@@ -82,7 +136,8 @@ def main():
 
         # Create a video recorder object
         video_recorder = env.client.startStateLogging(
-            p.STATE_LOGGING_VIDEO_MP4, f"generated_videos/{timestamp}.mp4"
+            p.STATE_LOGGING_VIDEO_MP4,
+            os.path.join(args.save_dir, f"generated_videos/{timestamp}.mp4"),
         )
 
     for _ in range(args.num_exps):
