@@ -405,8 +405,10 @@ class SkeletonPlanner(Policy):
 
             # For each pair of blocks, fit an SBI model
             sbi_models = {}
-            for source_block_id in initial_state.block_ids+[initial_state.foundation]:
-                for target_block_id in initial_state.block_ids+[initial_state.foundation]:
+            for source_block_id in initial_state.block_ids + [initial_state.foundation]:
+                for target_block_id in initial_state.block_ids + [
+                    initial_state.foundation
+                ]:
                     if source_block_id == target_block_id:
                         continue
                     # Fit an SBI model for this pair of blocks

@@ -6,9 +6,11 @@ import random
 import time
 from os import listdir
 from os.path import isfile, join
+
 import numpy as np
 import pybullet as p
 import pybullet_utils.bullet_client as bc
+
 import bandu_stacking.pb_utils as pbu
 from bandu_stacking.env_utils import (
     ARM_GROUP,
@@ -24,7 +26,12 @@ from bandu_stacking.env_utils import (
 )
 from bandu_stacking.policies.policy import State
 from bandu_stacking.realsense_utils import CALIB_DIR, CAMERA_SNS, get_camera_image
-from bandu_stacking.vision_utils import save_camera_images, get_seg_sam,mask_roi, load_sam
+from bandu_stacking.vision_utils import (
+    get_seg_sam,
+    load_sam,
+    mask_roi,
+    save_camera_images,
+)
 
 BANDU_PATH = os.path.join(os.path.dirname(__file__), "models", "bandu_simplified")
 
@@ -126,12 +133,12 @@ class StackingEnvironment:
                     os.path.join(CALIB_DIR, f"{camera_sn}/pose.npy")
                 )
                 camera_image = get_camera_image(camera_sn, base_T_camera)
-
-                
                 camera_image = mask_roi(camera_sn, camera_image)
-
-                masks = get_seg_sam(self.sam, camera_image.rgbPixels)
-                
+                masks, seg_image = get_seg_sam(self.sam, camera_image.rgbPixels)
+                camera_image.segmentationMaskBuffer = (
+                    seg_image[:, :, :3] * 255
+                ).astype(np.uint8)
+                camera_image.camera_pose = base_T_camera
                 save_camera_images(camera_image, prefix=camera_sn)
 
         elif object_set == "blocks":

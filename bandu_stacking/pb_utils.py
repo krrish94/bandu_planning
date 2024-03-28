@@ -1196,6 +1196,7 @@ def get_bodies(client=None, **kwargs):
 
 def save_image(filename, rgba):
     import imageio
+
     imageio.imwrite(filename, rgba)
 
 
@@ -1473,6 +1474,18 @@ def quaternion_from_matrix(matrix):
 
 def matrix_from_tform(tform):
     return np.array(tform)[:3, :3]
+
+
+def matrix_from_quat(quat):
+    return np.array(p.getMatrixFromQuaternion(quat)).reshape(3, 3)
+
+
+def tform_from_pose(pose):
+    (point, quat) = pose
+    tform = np.eye(4)
+    tform[:3, 3] = point
+    tform[:3, :3] = matrix_from_quat(quat)
+    return tform
 
 
 def quat_from_matrix(rot):

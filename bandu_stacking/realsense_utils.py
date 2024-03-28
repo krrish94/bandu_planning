@@ -8,9 +8,7 @@ import numpy as np
 
 from bandu_stacking.pb_utils import CameraImage
 
-CALIB_DIR = os.path.join(
-    os.path.dirname(__file__), "../calibration/current_calibration/calib"
-)
+CALIB_DIR = os.path.join(os.path.dirname(__file__), "../realworld/capture/calib")
 CAMERA_SNS = [
     "103422071983",
     "027322071284",

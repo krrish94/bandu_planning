@@ -57,6 +57,7 @@ def simulate_forward_model(block_id, mass, friction, restitution, client, prior_
     is_stable = height_change > 0
     return height_change, is_stable
 
+
 # Replicate the above function, but allow to use a source_block_id and a target_block_id
 # (i.e., change states of two blocks) and run SBI like above.
 def fit_sbi_model_pairwise(

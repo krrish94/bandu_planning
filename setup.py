@@ -5,12 +5,12 @@ from setuptools import setup
 setup(
     name="bandu_stacking",
     version="0.1.0",
-    packages=[],
+    packages=["bandu_stacking"],
     include_package_data=True,
     install_requires=[
         "pylint>=2.14.5",
         "pytest-pylint>=0.18.0",
-        "scipy==1.12.0",
+        "scipy",
         "pyzmq==25.1.2",
         "trimesh==4.2.0",
         "tqdm==4.66.2",
@@ -22,8 +22,9 @@ setup(
         "sbi==0.22.0",
         "rtree==1.2.0",
         "easydict==1.13",
-        "torchvision==0.17.1",
         "opencv-python==4.9.0.80",
         "pyrealsense2==2.54.2.5684",
+        "torch",
+        "torchvision"
     ],
 )

@@ -1,23 +1,206 @@
+import argparse
 import copy
-import os
-import numpy as np
-import cv2
+import glob
 import json
+import os
+import os.path as osp
 import pickle as pkl
+import random
+from enum import IntEnum
 
+import apriltag
+import cv2
+import numpy as np
 import open3d as o3d
 import pyrealsense2 as rs
 from PIL import Image
 from tqdm import trange
-from realsense_recorder import realsense_capture, get_profiles
-import argparse
-import random
-import glob
-import apriltag
+
+import bandu_stacking.pb_utils as pbu
+
+# from helper.utils import make_dir
+
+
+class Preset(IntEnum):
+    Custom = 0
+    Default = 1
+    Hand = 2
+    HighAccuracy = 3
+    HighDensity = 4
+    MediumDensity = 5
+
+
+def save_intrinsic_as_json(filename, frame):
+    intrinsics = frame.profile.as_video_stream_profile().intrinsics
+    with open(filename, "w") as outfile:
+        obj = json.dump(
+            {
+                "width": intrinsics.width,
+                "height": intrinsics.height,
+                "intrinsic_matrix": [
+                    intrinsics.fx,
+                    0,
+                    0,
+                    0,
+                    intrinsics.fy,
+                    0,
+                    intrinsics.ppx,
+                    intrinsics.ppy,
+                    1,
+                ],
+            },
+            outfile,
+            indent=4,
+        )
+
+
+"""
+Query for the color and depth stream profiles available with the Intel Realsense camera
+DEBUG this code to get the appropriate color and depth profile
+"""
+
+
+def get_profiles():
+    ctx = rs.context()
+    devices = ctx.query_devices()
+
+    color_profiles = []
+    depth_profiles = []
+    for device in devices:
+        name = device.get_info(rs.camera_info.name)
+        serial = device.get_info(rs.camera_info.serial_number)
+        print(f"Sensor: {name}, {serial}")
+        print("Supported video formats: ")
+        for sensor in device.query_sensors():
+            for stream_profile in sensor.get_stream_profiles():
+                stream_type = str(stream_profile.stream_type())
+
+                if stream_type in ["stream.color", "stream.depth"]:
+                    v_profile = stream_profile.as_video_stream_profile()
+                    fmt = stream_profile.format()
+                    w, h = v_profile.width(), v_profile.height()
+                    fps = v_profile.fps()
+
+                    video_type = stream_type.split(".")[-1]
+                    print(
+                        f"Video type: {video_type}, width={w}, height={h}, fps={fps}, format={fmt}"
+                    )
+                    if video_type == "color":
+                        color_profiles.append((w, h, fps, fmt))
+                    else:
+                        depth_profiles.append((w, h, fps, fmt))
+
+    return color_profiles, depth_profiles
+
+
+"""
+Capture the scene from a given pose (pose_index)
+"""
+
+
+def realsense_capture(
+    args, pipeline, depth_sensor, align, pose_index, frames_to_skip=0
+):
+    frames_to_capture = args.frames_to_capture
+
+    path_output = args.output_folder
+    path_depth = osp.join(args.output_folder, f"{pose_index}", "depth")
+    path_color = osp.join(args.output_folder, f"{pose_index}", "rgb")
+    print(path_depth, args.record_images)
+
+    if args.record_images:
+        os.makedirs(path_depth, exist_ok=True)
+        os.makedirs(path_color, exist_ok=True)
+        # make_dir(path_depth)
+        # make_dir(path_color)
+
+    depth_scale = depth_sensor.get_depth_scale()
+
+    # We will not display the background of objects more than
+    # clipping_distance_in_meters meters away
+    clipping_distance_in_meters = (
+        args.clipping_distance
+    )  # 3 meter --> ADD YOUR OWN CLIPPING DISTANCE HERE (3 meters is good for manipulator experiments)
+    clipping_distance = clipping_distance_in_meters / depth_scale
+
+    # Streaming loop
+    frame_count = 0
+    print(f"Capturing {frames_to_capture} frames")
+    try:
+        while True and (frame_count < frames_to_capture or frame_count < 0):
+
+            print(
+                f"Depth preset value : {depth_sensor.get_option(rs.option.visual_preset)}"
+            )
+            # Get frameset of color and depth
+            frames = pipeline.wait_for_frames(timeout_ms=10000)
+
+            # Align the depth frame to color frame
+            aligned_frames = align.process(frames)
+
+            # Get aligned frames
+            aligned_depth_frame = aligned_frames.get_depth_frame()
+            color_frame = aligned_frames.get_color_frame()
+
+            # Validate that both frames are valid
+            if not aligned_depth_frame or not color_frame:
+                continue
+
+            depth_image = np.asanyarray(aligned_depth_frame.get_data())
+            color_image = np.asanyarray(color_frame.get_data())
+
+            if frames_to_skip > 1:
+                frames_to_skip = frames_to_skip - 1
+                continue
+
+            if args.record_images:
+                if frame_count == 0:
+                    save_intrinsic_as_json(
+                        osp.join(path_output, f"{pose_index}", "camera_intrinsic.json"),
+                        color_frame,
+                    )
+
+                cv2.imwrite(
+                    f"{path_depth}/{str(frame_count).zfill(5)}.png", depth_image
+                )
+                cv2.imwrite(
+                    f"{path_color}/{str(frame_count).zfill(5)}.jpg",
+                    cv2.cvtColor(color_image, cv2.COLOR_RGB2BGR),
+                )
+                print(f"Saved color and depth image {str(frame_count).zfill(5)}")
+                frame_count += 1
+            else:
+                frame_count = -1
+
+            # # Remove background - Set pixels further than clipping_distance to grey
+            # grey_color = 153
+            # # Depth image is 1 channel, color is 3 channels
+            # depth_image_3d = np.dstack((depth_image, depth_image, depth_image))
+            # bg_removed = np.where((depth_image_3d > clipping_distance) | (depth_image_3d <= 0), grey_color, color_image)
+
+            # Render images
+            if args.render_images:
+                depth_colormap = cv2.applyColorMap(
+                    cv2.convertScaleAbs(depth_image, alpha=0.09), cv2.COLORMAP_JET
+                )
+                images = np.hstack((bg_removed, depth_colormap))
+                cv2.namedWindow("Recorder Realsense", cv2.WINDOW_AUTOSIZE)
+                cv2.imshow("Recorder Realsense", images)
+                key = cv2.waitKey(1)
+
+                # if 'esc' button pressed, escape loop and exit program
+                if key == 27:
+                    cv2.destroyAllWindows()
+                    break
+    finally:
+        pass
+        # pipeline.stop()
+
 
 def capture_realsense_image(output_folder, serial_number):
 
     from types import SimpleNamespace
+
     rs_args = SimpleNamespace()
     rs_args.output_folder = output_folder
     rs_args.realsense_preset = 1
@@ -25,7 +208,7 @@ def capture_realsense_image(output_folder, serial_number):
     rs_args.frames_to_capture = 1
     rs_args.render_images = False
     rs_args.record_images = True
-    rs_args.color_profile = 14  #42
+    rs_args.color_profile = 14  # 42
     rs_args.depth_profile = 5
 
     os.makedirs(output_folder, exist_ok=True)
@@ -49,7 +232,7 @@ def capture_realsense_image(output_folder, serial_number):
     color_profile = color_profiles[rs_args.color_profile]
     depth_profile = depth_profiles[rs_args.depth_profile]
 
-    print(f'Using the profiles: color: {color_profile}, depth: {depth_profile}')
+    print(f"Using the profiles: color: {color_profile}, depth: {depth_profile}")
     # w, h, fps, fmt = depth_profile
     # config.enable_stream(rs.stream.depth, w, h, fmt, fps)
     # w, h, fps, fmt = color_profile
@@ -63,11 +246,13 @@ def capture_realsense_image(output_folder, serial_number):
     align_to = rs.stream.color
     align = rs.align(align_to)
 
-    realsense_capture(rs_args, pipeline, depth_sensor, align, serial_number, frames_to_skip=10)
+    realsense_capture(
+        rs_args, pipeline, depth_sensor, align, serial_number, frames_to_skip=10
+    )
 
 
 def read_pcds(imgdir, serial_numbers, depth_cutoffs):
-    
+
     pcds = []
     for idx, serial_number in enumerate(serial_numbers):
         rgb_image_path = os.path.join(imgdir, serial_number, "rgb", "00000.jpg")
@@ -80,33 +265,38 @@ def read_pcds(imgdir, serial_numbers, depth_cutoffs):
         depth_img_np = depth_img_np * 1000.0
         depth_img_np = depth_img_np.astype(np.uint16)
         intrinsic_json = os.path.join(imgdir, serial_number, "camera_intrinsic.json")
-        with open(intrinsic_json, 'r') as json_file:
+        with open(intrinsic_json, "r") as json_file:
             intrinsic_data = json.load(json_file)
-        width = intrinsic_data['width']
-        height = intrinsic_data['height']
-        intrinsic_matrix = intrinsic_data['intrinsic_matrix']
+        width = intrinsic_data["width"]
+        height = intrinsic_data["height"]
+        intrinsic_matrix = intrinsic_data["intrinsic_matrix"]
         intrinsic = o3d.camera.PinholeCameraIntrinsic(
-            width, height, intrinsic_matrix[0], intrinsic_matrix[4], intrinsic_matrix[6], intrinsic_matrix[7]
+            width,
+            height,
+            intrinsic_matrix[0],
+            intrinsic_matrix[4],
+            intrinsic_matrix[6],
+            intrinsic_matrix[7],
         )
         rgbd_image = o3d.geometry.RGBDImage.create_from_color_and_depth(
-            rgb_img, o3d.geometry.Image(depth_img_np), convert_rgb_to_intensity=False,
+            rgb_img,
+            o3d.geometry.Image(depth_img_np),
+            convert_rgb_to_intensity=False,
         )
-        pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
-            rgbd_image, intrinsic
-        )
+        pcd = o3d.geometry.PointCloud.create_from_rgbd_image(rgbd_image, intrinsic)
         # o3d.visualization.draw_geometries([pcd])
         pcds.append(pcd)
     return pcds
 
 
 def register_icp(pcds, init=None, debug_visualization=False):
-    camera_order = [0, 1] # TODO: read the camera order from the config file
+    camera_order = [0, 1]  # TODO: read the camera order from the config file
     # TODO: Error handling if number of poses in the camera order < 1
     # camera_order = reconstruction_config['realsense_camera_order'] # defines the order in which the poses are processed by ICP --> for good initialization
 
     registered_pcd = pcds[camera_order[0]]
     registered_pcd.estimate_normals()
-    transformations = dict() # transformation matrices representing poses
+    transformations = dict()  # transformation matrices representing poses
     transformations[camera_order[0]] = np.eye(4, dtype=np.float32)
 
     # TODO: Add progress tracker
@@ -118,23 +308,31 @@ def register_icp(pcds, init=None, debug_visualization=False):
         if init is not None:
             init = np.eye(4)
         reg_p2p = o3d.pipelines.registration.registration_icp(
-            current_pcd, registered_pcd, max_correspondence_distance=0.05, init=init,
-            estimation_method=o3d.pipelines.registration.TransformationEstimationPointToPlane())
+            current_pcd,
+            registered_pcd,
+            max_correspondence_distance=0.05,
+            init=init,
+            estimation_method=o3d.pipelines.registration.TransformationEstimationPointToPlane(),
+        )
 
         # transform the current_pcd by the estimated transformation
         current_pcd = current_pcd.transform(reg_p2p.transformation)
-        transformations[camera_pose] = np.asarray(reg_p2p.transformation, dtype=np.float32)
+        transformations[camera_pose] = np.asarray(
+            reg_p2p.transformation, dtype=np.float32
+        )
         # merge the pcds to get the registered pcd for the current step
         registered_pcd = merge_pcds([current_pcd, registered_pcd])
         registered_pcd.estimate_normals()
-        if debug_visualization: # visualize the registered pcd at the current step if debug_visualization is set to True
+        if (
+            debug_visualization
+        ):  # visualize the registered pcd at the current step if debug_visualization is set to True
             o3d.visualization.draw_geometries([registered_pcd])
 
     return transformations, registered_pcd
 
+
 def array2pcd(points, colors):
-    """
-    Convert points and colors into open3d point cloud.
+    """Convert points and colors into open3d point cloud.
 
     Args:
         points(np.array): coordinates of the points.
@@ -156,44 +354,60 @@ def preprocess_point_cloud(pcd, voxel_size):
     radius_normal = voxel_size * 2
     # print(":: Estimate normal with search radius %.3f." % radius_normal)
     pcd_down.estimate_normals(
-        o3d.geometry.KDTreeSearchParamHybrid(radius=radius_normal, max_nn=30))
+        o3d.geometry.KDTreeSearchParamHybrid(radius=radius_normal, max_nn=30)
+    )
 
     radius_feature = voxel_size * 5
     # print(":: Compute FPFH feature with search radius %.3f." % radius_feature)
     pcd_fpfh = o3d.pipelines.registration.compute_fpfh_feature(
         pcd_down,
-        o3d.geometry.KDTreeSearchParamHybrid(radius=radius_feature, max_nn=100))
+        o3d.geometry.KDTreeSearchParamHybrid(radius=radius_feature, max_nn=100),
+    )
     return pcd_down, pcd_fpfh
 
 
-def execute_global_registration(source_down, target_down, source_fpfh,
-                                target_fpfh, voxel_size):
+def execute_global_registration(
+    source_down, target_down, source_fpfh, target_fpfh, voxel_size
+):
     distance_threshold = voxel_size * 1.5
     # print(":: RANSAC registration on downsampled point clouds.")
     # print("   Since the downsampling voxel size is %.3f," % voxel_size)
     # print("   we use a liberal distance threshold %.3f." % distance_threshold)
     result = o3d.pipelines.registration.registration_ransac_based_on_feature_matching(
-        source_down, target_down, source_fpfh, target_fpfh, True,
+        source_down,
+        target_down,
+        source_fpfh,
+        target_fpfh,
+        True,
         distance_threshold,
         o3d.pipelines.registration.TransformationEstimationPointToPoint(False),
-        3, [
-            o3d.pipelines.registration.CorrespondenceCheckerBasedOnEdgeLength(
-                0.9),
+        3,
+        [
+            o3d.pipelines.registration.CorrespondenceCheckerBasedOnEdgeLength(0.9),
             o3d.pipelines.registration.CorrespondenceCheckerBasedOnDistance(
-                distance_threshold)
-        ], o3d.pipelines.registration.RANSACConvergenceCriteria(100000, 0.999))
+                distance_threshold
+            ),
+        ],
+        o3d.pipelines.registration.RANSACConvergenceCriteria(100000, 0.999),
+    )
     return result
 
 
-def execute_fast_global_registration(source_down, target_down, source_fpfh,
-                                     target_fpfh, voxel_size):
+def execute_fast_global_registration(
+    source_down, target_down, source_fpfh, target_fpfh, voxel_size
+):
     distance_threshold = voxel_size * 0.5
     # print(":: Apply fast global registration with distance threshold %.3f" \
-            # % distance_threshold)
+    # % distance_threshold)
     result = o3d.pipelines.registration.registration_fgr_based_on_feature_matching(
-        source_down, target_down, source_fpfh, target_fpfh,
+        source_down,
+        target_down,
+        source_fpfh,
+        target_fpfh,
         o3d.pipelines.registration.FastGlobalRegistrationOption(
-            maximum_correspondence_distance=distance_threshold))
+            maximum_correspondence_distance=distance_threshold
+        ),
+    )
     return result
 
 
@@ -203,11 +417,11 @@ def draw_registration_result(source, target, transformation):
     # source_temp.paint_uniform_color([1, 0.706, 0])
     # target_temp.paint_uniform_color([0, 0.651, 0.929])
     source_temp.transform(transformation)
-    o3d.visualization.draw_geometries([source_temp, target_temp])#,
-                                    #   zoom=0.4559,
-                                    #   front=[0.6452, -0.3036, -0.7011],
-                                    #   lookat=[1.9892, 2.0208, 1.8945],
-                                    #   up=[-0.2779, -0.9482, 0.1556])
+    o3d.visualization.draw_geometries([source_temp, target_temp])  # ,
+    #   zoom=0.4559,
+    #   front=[0.6452, -0.3036, -0.7011],
+    #   lookat=[1.9892, 2.0208, 1.8945],
+    #   up=[-0.2779, -0.9482, 0.1556])
 
 
 def global_registration(source, target, voxel_size=0.05, visualize=False, fast=False):
@@ -215,9 +429,13 @@ def global_registration(source, target, voxel_size=0.05, visualize=False, fast=F
     target_down, target_fpfh = preprocess_point_cloud(target, voxel_size)
 
     if fast:
-        result_ransac = execute_fast_global_registration(source_down, target_down, source_fpfh, target_fpfh, voxel_size)
+        result_ransac = execute_fast_global_registration(
+            source_down, target_down, source_fpfh, target_fpfh, voxel_size
+        )
     else:
-        result_ransac = execute_global_registration(source_down, target_down, source_fpfh, target_fpfh, voxel_size)
+        result_ransac = execute_global_registration(
+            source_down, target_down, source_fpfh, target_fpfh, voxel_size
+        )
     # print(result_ransac)
     if visualize:
         draw_registration_result(source_down, target_down, result_ransac.transformation)
@@ -231,7 +449,9 @@ def run_search_for_calibration(source, target, savedir, iters):
     inlier_rmses = []
 
     for i in trange(iters):
-        registration_result = global_registration(source, target, voxel_size=0.01, visualize=False)
+        registration_result = global_registration(
+            source, target, voxel_size=0.01, visualize=False
+        )
         # source.transform(registration_result.transformation)
         # print(registration_result.transformation)
         # source.transform(registration_result.transformation)
@@ -240,7 +460,7 @@ def run_search_for_calibration(source, target, savedir, iters):
         registration_results.append(registration_result.transformation)
         fitnesses.append(registration_result.fitness)
         inlier_rmses.append(registration_result.inlier_rmse)
-        
+
         # registration_result = global_registration(source, target, voxel_size=0.01, visualize=True)
         # print(registration_result.transformation)
         # source.transform(registration_result.transformation)
@@ -248,7 +468,7 @@ def run_search_for_calibration(source, target, savedir, iters):
         # registration_result = global_registration(source, target, voxel_size=0.005, visualize=True)
         # print(registration_result.transformation)
         # source.transform(registration_result.transformation)
-    
+
     saved_results = {
         "fitnesses": fitnesses,
         "inlier_rmses": inlier_rmses,
@@ -260,8 +480,7 @@ def run_search_for_calibration(source, target, savedir, iters):
 
 
 def pcd2array(pcd):
-    """
-    Convert open3d point cloud into points and colors.
+    """Convert open3d point cloud into points and colors.
 
     Args:
         pcd(open3d.geometry.PointCloud): the point cloud.
@@ -276,8 +495,7 @@ def pcd2array(pcd):
 
 
 def merge_pcds(pcds):
-    """
-    Merge several point cloud into a single one.
+    """Merge several point cloud into a single one.
 
     Args:
         pcds(list): list of point cloud.
@@ -292,12 +510,12 @@ def merge_pcds(pcds):
     for i in range(1, len(pcds)):
         points, colors = pcd2array(pcds[i])
         old_points = np.concatenate((old_points, points))
-        old_colors = np.concatenate((old_colors, colors)) 
+        old_colors = np.concatenate((old_colors, colors))
     return array2pcd(old_points, old_colors)
 
 
 def pick_points_from_gui(pcd: o3d.geometry.PointCloud) -> np.array:
-    """Return a set of clicked points from the visualizer
+    """Return a set of clicked points from the visualizer.
 
     Args:
         pcd (o3d.geometry.PointCloud): Open3D pointcloud to visualize
@@ -316,7 +534,6 @@ def pick_points_from_gui(pcd: o3d.geometry.PointCloud) -> np.array:
     vis.destroy_window()
     print("")
     return vis.get_picked_points()
-
 
 
 def draw_tag_detections(detector_results, image):
@@ -388,10 +605,12 @@ def create_pointcloud(color, depth, intrinsics):
 
 
 def detection_to_pose(detection, intrinsics, tagsize=None):
-    """experimental. did not work well (figured out the bugs later)
-    Need to use the scale factor recommended by the homography code (i.e.,
-    use the sqrt of the sum of squares of the first two col vectors of the H matrix)
-    for scaling the rots and translations. Then, need to scale the resultant
+    """experimental.
+
+    did not work well (figured out the bugs later) Need to use the scale
+    factor recommended by the homography code (i.e., use the sqrt of the
+    sum of squares of the first two col vectors of the H matrix) for
+    scaling the rots and translations. Then, need to scale the resultant
     translation vector by the tagsize (in metres).
     """
     H = detection[5]
@@ -663,17 +882,17 @@ def procrustes(X, Y, scaling=False, reflection=False):
 
     return d, Z, tform
 
-def main():
 
+def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--logdir",
         type=str,
-        default="capture-mar-28/calib",
+        default="capture/calib",
         help="Path to log directory containing captured rgb-d images and extrinsics",
     )
-   
+
     parser.add_argument(
         "--visualize",
         action="store_true",
@@ -685,7 +904,6 @@ def main():
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
 
     args = parser.parse_args()
-
     """
     OLD (Feb 17, 2024)
     top cam: 103422071983
@@ -737,7 +955,6 @@ def main():
     )
     detector = apriltag.Detector(options=detector_options)
 
-
     imgfiles = [
         os.path.join(args.logdir, devids[i], "rgb", str("0").zfill(5) + ".jpg")
         for i in range(num_cameras)
@@ -773,7 +990,7 @@ def main():
         ]
         for i in range(num_cameras)
     ]
-    
+
     viz_clouds = []  # This list will be set only if args.visualize is True
 
     # Poll all images for tags of interest
@@ -822,22 +1039,25 @@ def main():
     pcd0_colors = np.asarray(pcd0.colors)
     pcd0_colors[:, 1:3] /= 2  # decrease opacity of G, B channels
     pcd0.colors = o3d.utility.Vector3dVector(pcd0_colors)
-    
+
     if args.visualize:
         viz_clouds.append(pcd0)
 
+    # transform from the top camera to the robot base (world frame) as measured with a meter stick.
+    world_T_topcam = pbu.multiply(
+        pbu.Pose(pbu.Point(0.562, 0.177, 1.204), pbu.Euler(-3.141, 0.001, -1.572))
+    )
+
     # Store pose of ref cam as the 4 x 4 identity matrix
     savefile = os.path.join(args.logdir, devids[REF_CAM_IDX], "pose.npy")
-    np.save(savefile, np.eye(4))
+    np.save(savefile, pbu.tform_from_pose(world_T_topcam))
 
     for cam_idx in range(num_cameras):
         if cam_idx == REF_CAM_IDX:
             continue
         print(f"Processing camera {cam_idx}...")
         tags_in_img_cur = img_tag_viewgraph[cam_idx] == 1.0
-        common_tag_inds = np.nonzero(np.logical_and(tags_in_img_0, tags_in_img_cur))[
-            0
-        ]  
+        common_tag_inds = np.nonzero(np.logical_and(tags_in_img_0, tags_in_img_cur))[0]
 
         cam_cur_to_cam_0_tf_measurements_rmat = []
         measurement_confidences = []
@@ -910,14 +1130,14 @@ def main():
         pcd_cur_corners = o3d.geometry.PointCloud()
         pcd_cur_corners.points = o3d.utility.Vector3dVector(_corner_pcd_cur)
         pcd_cur_corners.paint_uniform_color([0, 0, 1])
-        
+
         # This seems to work well
         _rot = _transform[:3, :3]
         _translation = _transform[:3, 3]
         _transform[:3, :3] = _rot.T
         _transform[:3, 3] = _translation
         pcd_cur.transform(_transform)
-        
+
         pcd0_colors[:, :2] /= 2  # decrease opacity of R, G channels
         pcd0.colors = o3d.utility.Vector3dVector(pcd0_colors)
 
@@ -926,11 +1146,15 @@ def main():
             viz_clouds.append(pcd_cur)
 
         savefile = os.path.join(args.logdir, devids[cam_idx], "pose.npy")
-        np.save(savefile, _transform)
+
+        world_T_cam = pbu.multiply(world_T_topcam, pbu.pose_from_tform(_transform))
+        np.save(savefile, pbu.tform_from_pose(world_T_cam))
+
         print(f"Saved transform to {savefile}")
-    
+
     if args.visualize:
         o3d.visualization.draw_geometries(viz_clouds)
+
 
 if __name__ == "__main__":
     main()
