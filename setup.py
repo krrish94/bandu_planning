@@ -26,5 +26,7 @@ setup(
         "pyrealsense2==2.54.2.5684",
         "torch",
         "torchvision",
+        "hydra-core==1.3.2",
+        "omegaconf==2.3.0",
     ],
 )
