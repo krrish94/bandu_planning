@@ -196,7 +196,6 @@ class StackingEnvironment:
             closest_distance = np.inf
             for object_index, filtered_pcd in enumerate(merged_pcds):
                 pcd_center = np.mean(filtered_pcd, axis=0)
-                print("PCD Center: "+str(pcd_center))
                 centered_pointcloud = filtered_pcd-pcd_center
                 mesh_path = os.path.join(self.save_dir, "mesh{}.obj".format(object_index))
                 pointcloud_to_mesh(

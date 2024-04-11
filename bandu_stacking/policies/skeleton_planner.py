@@ -115,11 +115,11 @@ def get_pick_place_plan(abstract_action, env, csp_debug=False):
 
         print("[Planner] finding place plan")
         for _ in range(MAX_PLACE_ATTEMPTS):
-            if placement_pose is None:
-                placement_pose = get_random_placement_pose(obj, surface_aabb, client)
             place_rp = RelativePose(
                 obj, parent=None, relative_pose=placement_pose, client=client
             )
+            # place_rp.assign(client=client)
+            # pbu.wait_if_gui(client=client)
             print("[Place Planner] Placement for pose: " + str(place_rp))
             body_saver.restore()
             place = place_planner(obj, place_rp, grasp, base_conf)
@@ -170,7 +170,7 @@ class SkeletonPlanner(Policy):
         return 1
 
     def sample_constrained_action(
-        self, state, source_obj, target_obj, mesh_info, best_face=False, **kwargs
+        self, state, source_obj, target_obj, mesh_info, best_face=False, random_face=False, **kwargs
     ):
         """Sample a pick and place action with the source object on the target
         object."""
@@ -179,20 +179,18 @@ class SkeletonPlanner(Policy):
             mesh_dict = mesh_info[source_obj]
             best_face = mesh_dict["face_sizes"][0][0]
             normal = mesh_dict["mesh"].face_normals[best_face]
+        elif(random_face):
+            # Pick a random face among the top (upto) 10 largest faces
+            mesh_dict = mesh_info[source_obj]
+            num_faces = min(10, len(mesh_dict["face_sizes"]))
+            face_index = random.randint(0, num_faces - 1)
+            face = mesh_dict["face_sizes"][face_index][0]
+            normal = mesh_dict["mesh"].face_normals[face]
         else:
             # Place all objects facing upward
             normal = [0, 0, 1]
 
-        # Pick a random face among the top (upto) 10 largest faces
-        mesh_dict = mesh_info[source_obj]
-        # recall that face_sizes may not contain upto 10 faces
-        # if the mesh has less than 10 faces
-        num_faces = min(10, len(mesh_dict["face_sizes"]))
-        # face_sizes is sorted in descending order
-        # so we pick a random face from the num_faces largest faces
-        face_index = random.randint(0, num_faces - 1)
-        face = mesh_dict["face_sizes"][face_index][0]
-        normal = mesh_dict["mesh"].face_normals[face]
+
 
         def get_rotation_matrix(vec2, vec1=np.array([1, 0, 0])):
             """Get rotation matrix between two vectors using scipy."""
@@ -255,7 +253,7 @@ class SkeletonPlanner(Policy):
                 current_tower = [initial_state.foundation]
                 for _ in range(plan_length):
                     # sample target object
-                    assert len(initial_state.block_ids) >= 2
+                    assert len(initial_state.block_ids) >= 1
 
                     target_object = random.choice(current_tower)
                     source_options = set(initial_state.block_ids) - set(current_tower)

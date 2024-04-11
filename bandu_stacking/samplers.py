@@ -81,10 +81,11 @@ def plan_workspace_motion(
     tool_waypoints,
     attachment=None,
     obstacles=[],
-    max_attempts=1,
+    max_attempts=2,
     debug=False,
     **kwargs,
 ):
+    
     assert tool_waypoints
 
     tool_link = pbu.link_from_name(robot, PANDA_TOOL_TIP, **kwargs)
@@ -116,7 +117,7 @@ def plan_workspace_motion(
             tool_link,
             tool_waypoints[0],
             fixed_joints=fixed_joints,
-            max_attempts=1,
+            max_attempts=5,
             max_time=np.inf,
             max_distance=None,
             use_halton=False,
@@ -263,7 +264,7 @@ def plan_prehensile(robot, obj, pose, grasp, environment=[], debug=False, **kwar
 
     create_grasp_attachment(robot, grasp, **kwargs)
     arm_path = plan_workspace_motion(
-        robot, gripper_waypoints, attachment=None, obstacles=environment, **kwargs
+        robot, gripper_waypoints, attachment=None, obstacles=environment, debug=debug, **kwargs
     )
     return arm_path
 
