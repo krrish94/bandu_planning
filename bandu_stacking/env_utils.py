@@ -142,8 +142,8 @@ def create_ycb(
 
 
 TABLE_AABB = pbu.AABB(
-    lower=(-0.50 / 2.0, -1.0 / 2.0, -0.03 / 2.0),
-    upper=(0.50 / 2.0, 1.0 / 2.0, 0.03 / 2.0),
+    lower=(-0.55 / 2.0, -1.0 / 2.0, -0.03 / 2.0),
+    upper=(0.55 / 2.0, 1.0 / 2.0, 0.03 / 2.0),
 )
 TABLE_POSE = pbu.Pose((0.35, 0, -TABLE_AABB.upper[2]))
 

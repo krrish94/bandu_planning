@@ -10,7 +10,7 @@ from os.path import isfile, join
 import numpy as np
 import pybullet as p
 import pybullet_utils.bullet_client as bc
-
+import pickle
 import bandu_stacking.pb_utils as pbu
 from bandu_stacking.env_utils import (
     ARM_GROUP,
@@ -33,13 +33,12 @@ from bandu_stacking.vision_utils import (
     mask_roi,
     merge_touching_pointclouds,
     pointcloud_to_mesh,
-    remove_statistical_outliers,
     save_camera_images,
     visualize_multiple_pointclouds,
 )
 
 BANDU_PATH = os.path.join(os.path.dirname(__file__), "models", "bandu_simplified")
-
+PCD_SAVE_NAME = "pointclouds.pkl"
 DEFAULT_TS = 5e-3
 BANDU_SCALING = 0.002
 
@@ -57,6 +56,28 @@ def iterate_sequence(
     return state
 
 
+def get_previous_log_folder(path='.'):
+    # List all items in the directory
+    all_items = os.listdir(path)
+    
+    # Filter out items that are not directories
+    directories = [item for item in all_items if os.path.isdir(os.path.join(path, item))]
+    
+    # Get the last modification time for each directory
+    directories_with_mtime = [(directory, os.path.getmtime(os.path.join(path, directory))) for directory in directories]
+    
+    # Sort directories by their modification time, in descending order
+    directories_with_mtime.sort(key=lambda x: x[1], reverse=True)
+    
+    # Check if there are any directories
+    if directories_with_mtime:
+        # Return the most recently written directory
+        return os.path.join(path, directories_with_mtime[1][0])
+    else:
+        # Return None if there are no directories
+        return None
+    
+
 class StackingEnvironment:
     def __init__(
         self,
@@ -66,6 +87,7 @@ class StackingEnvironment:
         disable_robot=False,
         real_camera=False,
         real_execute=False,
+        use_previous_pointclouds=False,
         save_dir="./logs",
     ):
 
@@ -75,6 +97,7 @@ class StackingEnvironment:
         self.disable_gui = disable_gui
         self.real_camera = real_camera
         self.save_dir = save_dir
+        self.use_previous_pointclouds = use_previous_pointclouds
 
         if not self.disable_gui:
             self.client = bc.BulletClient(connection_mode=p.GUI)
@@ -133,29 +156,44 @@ class StackingEnvironment:
 
         self.block_size = 0.045
         if self.real_camera:
-            self.sam = load_sam()
-            all_pcds = []
-            for camera_sn in CAMERA_SNS:
-                base_T_camera = np.load(
-                    os.path.join(CALIB_DIR, f"{camera_sn}/pose.npy")
-                )
-                camera_image = get_camera_image(camera_sn, base_T_camera)
-                camera_image = mask_roi(camera_sn, camera_image)
-                masks, seg_image = get_seg_sam(self.sam, camera_image.rgbPixels)
-                camera_image.segmentationMaskBuffer = (
-                    seg_image[:, :, :3] * 255
-                ).astype(np.uint8)
-                camera_image.camera_pose = pbu.pose_from_tform(base_T_camera)
-                all_pcds += depth_mask_to_point_clouds(camera_image, masks)
-                save_camera_images(
-                    camera_image, prefix=camera_sn, directory=self.save_dir
-                )
-            
-            visualize_multiple_pointclouds(all_pcds)
-            merged_pcds = merge_touching_pointclouds(all_pcds)
-            # filtered_pcds = [remove_statistical_outliers(pcd) for pcd in merged_pcds]
-            visualize_multiple_pointclouds(merged_pcds)
+            if not self.use_previous_pointclouds:
+                self.sam = load_sam()
+                all_pcds = []
+                for camera_sn in CAMERA_SNS:
+                    base_T_camera = np.load(
+                        os.path.join(CALIB_DIR, f"{camera_sn}/pose.npy")
+                    )
+                    camera_image = get_camera_image(camera_sn, base_T_camera)
+                    camera_image = mask_roi(camera_sn, camera_image)
+                    masks, seg_image = get_seg_sam(self.sam, camera_image.rgbPixels)
+                    camera_image.segmentationMaskBuffer = (
+                        seg_image[:, :, :3] * 255
+                    ).astype(np.uint8)
+                    camera_image.camera_pose = pbu.pose_from_tform(base_T_camera)
+                    all_pcds += depth_mask_to_point_clouds(camera_image, masks)
+                    save_camera_images(
+                        camera_image, prefix=camera_sn, directory=self.save_dir
+                    )
+                
+                # visualize_multiple_pointclouds(all_pcds)
+                merged_pcds = merge_touching_pointclouds(all_pcds)
+                # filtered_pcds = [remove_statistical_outliers(pcd) for pcd in merged_pcds]
+                visualize_multiple_pointclouds(merged_pcds)
 
+            else:
+                log_folder = get_previous_log_folder(os.path.join(save_dir, ".."))
+                with open(os.path.join(log_folder, PCD_SAVE_NAME), 'rb') as file:
+                    merged_pcds = pickle.load(file)
+
+            
+            pointcloud_save_dir = os.path.join(self.save_dir, PCD_SAVE_NAME)
+
+            with open(pointcloud_save_dir, 'wb') as file:
+                pickle.dump(merged_pcds, file)
+                
+            all_object_ids = []
+            closest_to_table_center = None
+            closest_distance = np.inf
             for object_index, filtered_pcd in enumerate(merged_pcds):
                 pcd_center = np.mean(filtered_pcd, axis=0)
                 print("PCD Center: "+str(pcd_center))
@@ -166,10 +204,21 @@ class StackingEnvironment:
                     mesh_path,
                 )
                 new_block = pbu.load_pybullet(mesh_path, color=self._obj_colors[object_index % len(self._obj_colors)], client=self.client)
-                pbu.set_pose(new_block, pbu.Pose(pbu.Point(*(pcd_center.tolist()))), client=self.client)
-                self.block_ids.append(new_block)
+                pose = pbu.Pose(pbu.Point(*(pcd_center.tolist())))
+                pbu.set_pose(new_block, pose, client=self.client)
+                dist_to_center = np.linalg.norm(np.array(pose[0])-np.array(TABLE_POSE[0]))
+                if(dist_to_center < closest_distance):
+                    closest_distance = dist_to_center
+                    closest_to_table_center = new_block
+                all_object_ids.append(new_block)
 
+            # Identify the object closest to the table center as the foundation
+            self.foundation = closest_to_table_center
+            self.foundation_pose = pbu.get_pose(self.foundation, client=self.client)
+            self.block_ids = [obj for obj in all_object_ids if obj != self.foundation]    
+            
             pbu.wait_if_gui(client=self.client)
+
         elif object_set == "blocks":
             for i in range(self.num_blocks):
                 color = self._obj_colors[i % len(self._obj_colors)]

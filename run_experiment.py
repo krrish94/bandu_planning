@@ -82,6 +82,9 @@ def create_args():
         "--real-execute", action="store_true", help="Execute on the real robot"
     )
     parser.add_argument(
+        "--use-previous-pointclouds", action="store_true", help="Execute on the real robot"
+    )
+    parser.add_argument(
         "--use-sbi", action="store_true", help="Execute on the real robot"
     )
     parser.add_argument(
@@ -117,6 +120,7 @@ def main():
         disable_gui=args.disable_gui,
         disable_robot=args.disable_robot,
         real_camera=args.real_camera,
+        use_previous_pointclouds=args.use_previous_pointclouds,
         save_dir=args.save_dir,
     )
 
