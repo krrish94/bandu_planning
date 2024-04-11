@@ -79,9 +79,6 @@ def create_args():
         default="logs/run{}".format(str(time.time())),
     )
     parser.add_argument(
-        "--real-execute", action="store_true", help="Execute on the real robot"
-    )
-    parser.add_argument(
         "--use-previous-pointclouds", action="store_true", help="Execute on the real robot"
     )
     parser.add_argument(
@@ -89,6 +86,9 @@ def create_args():
     )
     parser.add_argument(
         "--real-camera", action="store_true", help="Use real camera data"
+    )
+    parser.add_argument(
+        "--real-execute", action="store_true", help="Execute on the real robot"
     )
     parser.add_argument(
         "--disable-gui", action="store_true", help="View the pybullet gui when planning"
@@ -111,15 +111,13 @@ def main():
 
     setup_logger(args.save_dir)
 
-    if args.real_execute:
-        raise NotImplementedError
-
     env = StackingEnvironment(
         object_set=args.object_set,
         num_blocks=args.num_blocks,
         disable_gui=args.disable_gui,
         disable_robot=args.disable_robot,
         real_camera=args.real_camera,
+        real_execute=args.real_execute,
         use_previous_pointclouds=args.use_previous_pointclouds,
         save_dir=args.save_dir,
     )

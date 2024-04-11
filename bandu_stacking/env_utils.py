@@ -13,11 +13,16 @@ import trimesh
 
 import bandu_stacking.pb_utils as pbu
 from bandu_stacking.inverse_kinematics.utils import IKFastInfo
+from bandu_stacking.robot.robot_utils import FrankaFr3
+import math
 
 GRIPPER_GROUP = "main_gripper"
 CAMERA_FRAME = "camera_frame"
 CAMERA_OPTICAL_FRAME = "camera_frame"
 PANDA_TOOL_TIP = "panda_tool_tip"
+ROBOT_IP = "192.168.1.11"
+MAX_PANDA_FINGER = 0.045
+
 TRANSPARENT = pbu.RGBA(0, 0, 0, 0)
 
 ROOT_PATH = os.path.abspath(os.path.join(__file__, *[os.pardir] * 1))
@@ -393,53 +398,6 @@ class Switch(Command):
 
         return pbu.empty_sequence()
 
-    def controller(self, use_constraints=USE_CONSTRAINTS, **kwargs):
-        if not use_constraints:
-            return  # empty_sequence()
-        if self.parent is None:
-            # TODO: record the robot and tool_link
-            for constraint in pbu.get_fixed_constraints():
-                pbu.remove_constraint(constraint)
-        else:
-            robot, tool_link = self.parent
-            gripper_group = None
-            for group, (
-                arm_group,
-                gripper_group,
-                tool_name,
-            ) in robot.manipulators.items():
-                if pbu.link_from_name(robot, tool_name) == tool_link:
-                    break
-            else:
-                raise RuntimeError(tool_link)
-            gripper_joints = robot.get_group_joints(gripper_group)
-            finger_links = robot.get_finger_links(gripper_joints)
-
-            movable_bodies = [
-                body
-                for body in pbu.get_bodies(**kwargs)
-                if (body != robot) and not pbu.is_fixed_base(body, **kwargs)
-            ]
-            # collision_bodies = [body for body in movable_bodies if any_link_pair_collision(
-            #    robot, finger_links, body, max_distance=1e-2)]
-
-            gripper_width = robot.get_gripper_width(gripper_joints)
-            max_distance = gripper_width / 2.0
-            collision_bodies = [
-                body
-                for body in movable_bodies
-                if all(
-                    pbu.get_closest_points(
-                        robot, body, link1=link, max_distance=max_distance
-                    )
-                    for link in finger_links
-                )
-            ]
-            for body in collision_bodies:
-                pbu.add_fixed_constraint(body, robot, tool_link, max_force=None)
-
-        yield
-
     def __repr__(self):
         return "{}({})".format(self.__class__.__name__, self.body)
 
@@ -516,7 +474,7 @@ class Trajectory(Command):
         positions_curve = pbu.interpolate_path(self.body, self.joints, path, **kwargs)
         return positions_curve
 
-    def iterate(self, state, teleport=False, **kwargs):
+    def iterate(self, state, teleport=False, **kwargs):            
         if teleport:
             pbu.set_joint_positions(self.body, self.joints, self.path[-1], **kwargs)
             return self.path[-1]
@@ -535,6 +493,20 @@ class GroupTrajectory(Trajectory):
         joints = body.get_group_joints(group, **kwargs)
         super(GroupTrajectory, self).__init__(body, joints, path, *args, **kwargs)
         self.group = group
+    
+    def iterate(self, state, real_controller = None, **kwargs):
+        super().iterate(state, **kwargs)
+        pbu.wait_if_gui("Good?", **kwargs)
+
+        if(real_controller is not None):
+            # current_joint_positions = real_controller.get_joint_positions(**kwargs)
+            path = list(self.path)
+            
+            # if(np.sum(np.abs(np.array(path[0])-np.array(current_joint_positions)))>0.05):
+            #     path = [current_joint_positions]+path
+
+            real_controller.command_group_trajectory(self.group, path, **kwargs)
+
 
     def reverse(self, **kwargs):
         return self.__class__(
@@ -610,29 +582,51 @@ class RelativePose(object):
         name = "wp" if self.parent is None else "rp"
         return "{}{}".format(name, id(self) % 1000)
 
+class RealController():
 
+    def __init__(self, body):
+        self.body = body
+        self.robot = FrankaFr3(ROBOT_IP, np.eye(4))
+
+    def command_group_trajectory(self, group, positions, dt=0.01, **kwargs):
+        for position in positions:
+            self.command_group(group, position, **kwargs)
+            time.sleep(dt)
+
+
+    def command_group(
+        self, group, positions, **kwargs
+    ):  # TODO: default timeout
+        
+        if(group == ARM_GROUP):
+            positions_degrees = [math.degrees(p) for p in positions]
+            self.robot.move_joints(positions_degrees)
+        else:
+            if(list(positions)[0] > (MAX_PANDA_FINGER-0.01)):
+                self.robot.release_gripper()
+            else:
+                self.robot.grasp()
+
+    def get_joint_positions(self, **kwargs):
+        return [math.radians(angle) for angle in self.robot.joint_angles]
+
+        
 class PandaRobot:
     def __init__(
         self,
         robot_body,
         link_names={},
-        real_camera=False,
-        real_execute=False,
         **kwargs,
     ):
         self.link_names = link_names
         self.body = robot_body
-        self.real_camera = real_camera
-        self.real_execute = real_execute
         self.joint_groups = PANDA_GROUPS
         self.components = {}
-
         self.controller = SimulatedController(self)
 
         self.max_depth = 3.0
         self.min_z = 0.0
         self.BASE_LINK = "panda_link0"
-        self.MAX_PANDA_FINGER = 0.045
 
         self.reset(**kwargs)
 
@@ -642,7 +636,7 @@ class PandaRobot:
     def get_default_conf(self):
         conf = {
             "main_arm": DEFAULT_ARM_POS,
-            "main_gripper": [self.MAX_PANDA_FINGER, self.MAX_PANDA_FINGER],
+            "main_gripper": [MAX_PANDA_FINGER, MAX_PANDA_FINGER],
         }
         return conf
 
@@ -651,8 +645,8 @@ class PandaRobot:
 
     def get_open_positions(self):
         return {
-            "panda_finger_joint1": self.MAX_PANDA_FINGER,
-            "panda_finger_joint2": self.MAX_PANDA_FINGER,
+            "panda_finger_joint1": MAX_PANDA_FINGER,
+            "panda_finger_joint2": MAX_PANDA_FINGER,
         }
 
     def get_group_joints(self, group, **kwargs):
@@ -672,13 +666,7 @@ class PandaRobot:
     def reset(self, **kwargs):
         conf = self.get_default_conf()
         for group, positions in conf.items():
-            if self.real_execute:
-                group_dict = {
-                    name: pos for pos, name in zip(positions, self.joint_groups[group])
-                }
-                self.controller.command_group_dict(group, group_dict)
-            else:
-                self.controller.set_group_positions(group, positions, **kwargs)
+            self.controller.set_group_positions(group, positions, **kwargs)
 
     def get_group_limits(self, group, **kwargs):
         return pbu.get_custom_limits(

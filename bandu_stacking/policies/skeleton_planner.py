@@ -248,7 +248,7 @@ class SkeletonPlanner(Policy):
                 # Use all blocks
                 plan_length = len(initial_state.block_ids)
                 skeleton = []
-                state = copy.deepcopy(initial_state)
+                state = initial_state
                 collision = False
                 current_tower = [initial_state.foundation]
                 for _ in range(plan_length):

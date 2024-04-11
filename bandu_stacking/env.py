@@ -23,6 +23,7 @@ from bandu_stacking.env_utils import (
     create_pybullet_block,
     get_absolute_pose,
     get_current_confs,
+    RealController
 )
 from bandu_stacking.policies.policy import State
 from bandu_stacking.realsense_utils import CALIB_DIR, CAMERA_SNS, get_camera_image
@@ -44,10 +45,10 @@ BANDU_SCALING = 0.002
 
 
 def iterate_sequence(
-    state, sequence, time_step=DEFAULT_TS, teleport=False, **kwargs
+    state, sequence, time_step=DEFAULT_TS, real_controller=None, teleport=False, **kwargs
 ):  # None | INF
     assert sequence is not None
-    for i, _ in enumerate(sequence.iterate(state, teleport=teleport, **kwargs)):
+    for i, _ in enumerate(sequence.iterate(state, real_controller=real_controller, teleport=teleport, **kwargs)):
         state.propagate(**kwargs)
         if time_step is None:
             pbu.wait_if_gui(**kwargs)
@@ -96,6 +97,8 @@ class StackingEnvironment:
         self.disable_robot = disable_robot
         self.disable_gui = disable_gui
         self.real_camera = real_camera
+        self.real_execute = real_execute
+
         self.save_dir = save_dir
         self.use_previous_pointclouds = use_previous_pointclouds
 
@@ -116,6 +119,10 @@ class StackingEnvironment:
                 real_camera=real_camera,
                 client=self.client,
             )
+
+
+            if(self.real_execute):
+                self.real_controller = RealController(robot_body)
 
         self.client.configureDebugVisualizer(p.COV_ENABLE_GUI, 0)
         self.client.configureDebugVisualizer(p.COV_ENABLE_SHADOWS, 0)
@@ -435,7 +442,7 @@ class StackingEnvironment:
     def step(self, state, action, sim_freq=0):
         self.set_sim_state(state)
         self.world_state.assign()
-        iterate_sequence(self.world_state, action, client=self.client)
+        iterate_sequence(self.world_state, action, real_controller = self.real_controller, client=self.client)
         self.simulate_until_static(sim_freq=1e-2)
         next_state = self.state_from_sim()
         self.world_state = WorldState(client=self.client)
