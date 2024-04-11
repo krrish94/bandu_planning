@@ -973,6 +973,20 @@ def create_collision_shape(geometry, pose=unit_pose(), client=None, **kwargs):
         del collision_args["length"]
     return client.createCollisionShape(**collision_args)
 
+def get_aabb_edges(aabb):
+    d = len(aabb[0])
+    vertices = list(itertools.product(range(len(aabb)), repeat=d))
+    lines = []
+    for i1, i2 in itertools.combinations(vertices, 2):
+        if sum(i1[k] != i2[k] for k in range(d)) == 1:
+            p1 = [aabb[i1[k]][k] for k in range(d)]
+            p2 = [aabb[i2[k]][k] for k in range(d)]
+            lines.append((p1, p2))
+    return lines
+
+def draw_aabb(aabb, **kwargs):
+    return [add_line(p1, p2, **kwargs) for p1, p2 in get_aabb_edges(aabb)]
+
 
 def get_closest_points(
     body1,
@@ -985,7 +999,6 @@ def get_closest_points(
     **kwargs,
 ):
     client = client or DEFAULT_CLIENT
-
     if use_aabb and not aabb_overlap(
         get_buffered_aabb(body1, link1, max_distance=max_distance / 2.0),
         get_buffered_aabb(body2, link2, max_distance=max_distance / 2.0),
@@ -1014,7 +1027,7 @@ def get_closest_points(
 
     if results is None:
         results = []  # Strange pybullet failure case
-
+    
     return [CollisionInfo(*info) for info in results]
 
 
@@ -1767,7 +1780,7 @@ def clone_collision_shape(body, link, client=None):
     collision_data = get_collision_data(body, link, client=client)
     if not collision_data:
         return NULL_ID
-    assert len(collision_data) == 1
+
     # TODO: can do CollisionArray
     try:
         return collision_shape_from_data(collision_data[0], body, link, client=client)

@@ -98,7 +98,7 @@ class StackingEnvironment:
         self.disable_gui = disable_gui
         self.real_camera = real_camera
         self.real_execute = real_execute
-
+        self.real_controller = None
         self.save_dir = save_dir
         self.use_previous_pointclouds = use_previous_pointclouds
 
@@ -120,7 +120,7 @@ class StackingEnvironment:
                 client=self.client,
             )
 
-
+            
             if(self.real_execute):
                 self.real_controller = RealController(robot_body)
 

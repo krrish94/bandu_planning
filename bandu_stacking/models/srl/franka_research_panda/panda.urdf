@@ -14,30 +14,30 @@
       </link>
   <joint name="base" type="fixed">
     <parent link="base"/>
-    <child link="fr3_link0"/>
+    <child link="panda_link0"/>
     <origin rpy="0 0 0" xyz="0 0 0"/>
   </joint>
   <!-- sub-link defining detailed meshes for collision with environment -->
-  <link name="fr3_link0">
-    <visual name="fr3_link0_visual">
+  <link name="panda_link0">
+    <visual name="panda_link0_visual">
       <geometry>
         <mesh filename="package://meshes/fr3/visual/link0.dae"/>
       </geometry>
     </visual>
-    <collision name="fr3_link0_collision">
+    <collision name="panda_link0_collision">
       <geometry>
         <mesh filename="package://meshes/fr3/collision/link0.stl"/>
       </geometry>
     </collision>
   </link>
   <!-- sub-link defining detailed meshes for collision with environment -->
-  <link name="fr3_link1">
-    <visual name="fr3_link1_visual">
+  <link name="panda_link1">
+    <visual name="panda_link1_visual">
       <geometry>
         <mesh filename="package://meshes/fr3/visual/link1.dae"/>
       </geometry>
     </visual>
-    <collision name="fr3_link1_collision">
+    <collision name="panda_link1_collision">
       <geometry>
         <mesh filename="package://meshes/fr3/collision/link1.stl"/>
       </geometry>
@@ -48,23 +48,23 @@
       <inertia ixx="0.0186029651" ixy="1.3296e-05" ixz="-0.0001140944" iyy="0.0181195421" iyz="5.33017e-05" izz="0.0053883661"/>
     </inertial>
   </link>
-  <joint name="fr3_joint1" type="revolute">
+  <joint name="panda_joint1" type="revolute">
     <origin rpy="0 0 0" xyz="0 0 0.333"/>
-    <parent link="fr3_link0"/>
-    <child link="fr3_link1"/>
+    <parent link="panda_link0"/>
+    <child link="panda_link1"/>
     <axis xyz="0 0 1"/>
     <limit effort="87.0" lower="-2.7437" upper="2.7437" velocity="2.62"/>
     <safety_controller k_position="100.0" k_velocity="40.0" soft_lower_limit="-2.7437" soft_upper_limit="2.7437"/>
     <dynamics D="1" K="7000" damping="0.003" friction="0.0" mu_coulomb="0" mu_viscous="16"/>
   </joint>
   <!-- sub-link defining detailed meshes for collision with environment -->
-  <link name="fr3_link2">
-    <visual name="fr3_link2_visual">
+  <link name="panda_link2">
+    <visual name="panda_link2_visual">
       <geometry>
         <mesh filename="package://meshes/fr3/visual/link2.dae"/>
       </geometry>
     </visual>
-    <collision name="fr3_link2_collision">
+    <collision name="panda_link2_collision">
       <geometry>
         <mesh filename="package://meshes/fr3/collision/link2.stl"/>
       </geometry>
@@ -75,23 +75,23 @@
       <inertia ixx="0.0248426123" ixy="0.0012852153" ixz="0.0047668011" iyy="0.0200510561" iyz="-0.0077993576" izz="0.0448935091"/>
     </inertial>
   </link>
-  <joint name="fr3_joint2" type="revolute">
+  <joint name="panda_joint2" type="revolute">
     <origin rpy="-1.570796326794897 0 0" xyz="0 0 0"/>
-    <parent link="fr3_link1"/>
-    <child link="fr3_link2"/>
+    <parent link="panda_link1"/>
+    <child link="panda_link2"/>
     <axis xyz="0 0 1"/>
     <limit effort="87.0" lower="-1.7837" upper="1.7837" velocity="2.62"/>
     <safety_controller k_position="100.0" k_velocity="40.0" soft_lower_limit="-1.7837" soft_upper_limit="1.7837"/>
     <dynamics D="1" K="7000" damping="0.003" friction="0.0" mu_coulomb="0" mu_viscous="16"/>
   </joint>
   <!-- sub-link defining detailed meshes for collision with environment -->
-  <link name="fr3_link3">
-    <visual name="fr3_link3_visual">
+  <link name="panda_link3">
+    <visual name="panda_link3_visual">
       <geometry>
         <mesh filename="package://meshes/fr3/visual/link3.dae"/>
       </geometry>
     </visual>
-    <collision name="fr3_link3_collision">
+    <collision name="panda_link3_collision">
       <geometry>
         <mesh filename="package://meshes/fr3/collision/link3.stl"/>
       </geometry>
@@ -102,23 +102,23 @@
       <inertia ixx="0.0206960046" ixy="0.0006503378" ixz="-0.0086867454" iyy="0.0129617222" iyz="-0.0046382675" izz="0.0083748603"/>
     </inertial>
   </link>
-  <joint name="fr3_joint3" type="revolute">
+  <joint name="panda_joint3" type="revolute">
     <origin rpy="1.570796326794897 0 0" xyz="0 -0.316 0"/>
-    <parent link="fr3_link2"/>
-    <child link="fr3_link3"/>
+    <parent link="panda_link2"/>
+    <child link="panda_link3"/>
     <axis xyz="0 0 1"/>
     <limit effort="87.0" lower="-2.9007" upper="2.9007" velocity="2.62"/>
     <safety_controller k_position="100.0" k_velocity="40.0" soft_lower_limit="-2.9007" soft_upper_limit="2.9007"/>
     <dynamics D="1" K="7000" damping="0.003" friction="0.0" mu_coulomb="0" mu_viscous="16"/>
   </joint>
   <!-- sub-link defining detailed meshes for collision with environment -->
-  <link name="fr3_link4">
-    <visual name="fr3_link4_visual">
+  <link name="panda_link4">
+    <visual name="panda_link4_visual">
       <geometry>
         <mesh filename="package://meshes/fr3/visual/link4.dae"/>
       </geometry>
     </visual>
-    <collision name="fr3_link4_collision">
+    <collision name="panda_link4_collision">
       <geometry>
         <mesh filename="package://meshes/fr3/collision/link4.stl"/>
       </geometry>
@@ -129,23 +129,23 @@
       <inertia ixx="0.0189656777" ixy="0.0087442604" ixz="0.0154882253" iyy="0.021260554" iyz="-0.0050592943" izz="0.0216050853"/>
     </inertial>
   </link>
-  <joint name="fr3_joint4" type="revolute">
+  <joint name="panda_joint4" type="revolute">
     <origin rpy="1.570796326794897 0 0" xyz="0.0825 0 0"/>
-    <parent link="fr3_link3"/>
-    <child link="fr3_link4"/>
+    <parent link="panda_link3"/>
+    <child link="panda_link4"/>
     <axis xyz="0 0 1"/>
     <limit effort="87.0" lower="-3.0421" upper="-0.1518" velocity="2.62"/>
     <safety_controller k_position="100.0" k_velocity="40.0" soft_lower_limit="-3.0421" soft_upper_limit="-0.1518"/>
     <dynamics D="1" K="7000" damping="0.003" friction="0.0" mu_coulomb="0" mu_viscous="16"/>
   </joint>
   <!-- sub-link defining detailed meshes for collision with environment -->
-  <link name="fr3_link5">
-    <visual name="fr3_link5_visual">
+  <link name="panda_link5">
+    <visual name="panda_link5_visual">
       <geometry>
         <mesh filename="package://meshes/fr3/visual/link5.dae"/>
       </geometry>
     </visual>
-    <collision name="fr3_link5_collision">
+    <collision name="panda_link5_collision">
       <geometry>
         <mesh filename="package://meshes/fr3/collision/link5.stl"/>
       </geometry>
@@ -156,23 +156,23 @@
       <inertia ixx="0.0274316356" ixy="-0.0054626383" ixz="-0.0045776221" iyy="0.0250087792" iyz="0.0072115131" izz="0.0024232492"/>
     </inertial>
   </link>
-  <joint name="fr3_joint5" type="revolute">
+  <joint name="panda_joint5" type="revolute">
     <origin rpy="-1.570796326794897 0 0" xyz="-0.0825 0.384 0"/>
-    <parent link="fr3_link4"/>
-    <child link="fr3_link5"/>
+    <parent link="panda_link4"/>
+    <child link="panda_link5"/>
     <axis xyz="0 0 1"/>
     <limit effort="12.0" lower="-2.8065" upper="2.8065" velocity="5.26"/>
     <safety_controller k_position="100.0" k_velocity="40.0" soft_lower_limit="-2.8065" soft_upper_limit="2.8065"/>
     <dynamics D="1" K="7000" damping="0.003" friction="0.0" mu_coulomb="0" mu_viscous="16"/>
   </joint>
   <!-- sub-link defining detailed meshes for collision with environment -->
-  <link name="fr3_link6">
-    <visual name="fr3_link6_visual">
+  <link name="panda_link6">
+    <visual name="panda_link6_visual">
       <geometry>
         <mesh filename="package://meshes/fr3/visual/link6.dae"/>
       </geometry>
     </visual>
-    <collision name="fr3_link6_collision">
+    <collision name="panda_link6_collision">
       <geometry>
         <mesh filename="package://meshes/fr3/collision/link6.stl"/>
       </geometry>
@@ -183,23 +183,23 @@
       <inertia ixx="0.000724256" ixy="0.0021884556" ixz="0.0004615138" iyy="0.0072530249" iyz="-0.0006002451" izz="0.0065288729"/>
     </inertial>
   </link>
-  <joint name="fr3_joint6" type="revolute">
+  <joint name="panda_joint6" type="revolute">
     <origin rpy="1.570796326794897 0 0" xyz="0 0 0"/>
-    <parent link="fr3_link5"/>
-    <child link="fr3_link6"/>
+    <parent link="panda_link5"/>
+    <child link="panda_link6"/>
     <axis xyz="0 0 1"/>
     <limit effort="12.0" lower="0.5445" upper="4.5169" velocity="4.18"/>
     <safety_controller k_position="100.0" k_velocity="40.0" soft_lower_limit="0.5445" soft_upper_limit="4.5169"/>
     <dynamics D="1" K="7000" damping="0.003" friction="0.0" mu_coulomb="0" mu_viscous="16"/>
   </joint>
   <!-- sub-link defining detailed meshes for collision with environment -->
-  <link name="fr3_link7">
-    <visual name="fr3_link7_visual">
+  <link name="panda_link7">
+    <visual name="panda_link7_visual">
       <geometry>
         <mesh filename="package://meshes/fr3/visual/link7.dae"/>
       </geometry>
     </visual>
-    <collision name="fr3_link7_collision">
+    <collision name="panda_link7_collision">
       <geometry>
         <mesh filename="package://meshes/fr3/collision/link7.stl"/>
       </geometry>
@@ -210,34 +210,37 @@
       <inertia ixx="4.039e-07" ixy="1.875e-07" ixz="-1.593e-07" iyy="2.351e-07" iyz="-2.084e-07" izz="2.838e-07"/>
     </inertial>
   </link>
-  <joint name="fr3_joint7" type="revolute">
+  <joint name="panda_joint7" type="revolute">
     <origin rpy="1.570796326794897 0 0" xyz="0.088 0 0"/>
-    <parent link="fr3_link6"/>
-    <child link="fr3_link7"/>
+    <parent link="panda_link6"/>
+    <child link="panda_link7"/>
     <axis xyz="0 0 1"/>
     <limit effort="12.0" lower="-3.0159" upper="3.0159" velocity="5.26"/>
     <safety_controller k_position="100.0" k_velocity="40.0" soft_lower_limit="-3.0159" soft_upper_limit="3.0159"/>
     <dynamics D="1" K="7000" damping="0.003" friction="0.0" mu_coulomb="0" mu_viscous="16"/>
   </joint>
-  <link name="fr3_link8"/>
-  <joint name="fr3_joint8" type="fixed">
+  <link name="panda_link8"/>
+
+  <link name="panda_tool_tip"/>
+  
+  <joint name="panda_joint8" type="fixed">
     <origin rpy="0 0 0" xyz="0 0 0.107"/>
-    <parent link="fr3_link7"/>
-    <child link="fr3_link8"/>
+    <parent link="panda_link7"/>
+    <child link="panda_link8"/>
   </joint>
-  <joint name="fr3_hand_joint" type="fixed">
-    <parent link="fr3_link8"/>
-    <child link="fr3_hand"/>
+  <joint name="panda_hand_joint" type="fixed">
+    <parent link="panda_link8"/>
+    <child link="panda_hand"/>
     <origin rpy="0 0 -0.7853981633974483" xyz="0 0 0"/>
   </joint>
   <!-- sub-link defining detailed meshes for collision with environment -->
-  <link name="fr3_hand">
-    <visual name="fr3_hand_visual">
+  <link name="panda_hand">
+    <visual name="panda_hand_visual">
       <geometry>
         <mesh filename="package://meshes/fr3/visual/hand.dae"/>
       </geometry>
     </visual>
-    <collision name="fr3_hand_collision">
+    <collision name="panda_hand_collision">
       <geometry>
         <mesh filename="package://meshes/fr3/collision/hand.stl"/>
       </geometry>
@@ -248,14 +251,21 @@
       <inertia ixx="0.001" ixy="0" ixz="0" iyy="0.0025" iyz="0" izz="0.0017"/>
     </inertial>
   </link>
-  <!-- Define the hand_tcp frame -->
-  <link name="fr3_hand_tcp"/>
-  <joint name="fr3_hand_tcp_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0 0.1034"/>
-    <parent link="fr3_hand"/>
-    <child link="fr3_hand_tcp"/>
+  <joint name="panda_tool_tip_joint" type="fixed">
+    <origin rpy="0 -1.5708 0" xyz="0 0 0.10"/>
+    <parent link="panda_hand"/>
+    <child link="panda_tool_tip"/>
+    <axis xyz="0 0 0"/>
   </joint>
-  <link name="fr3_leftfinger">
+
+  <!-- Define the hand_tcp frame -->
+  <link name="panda_hand_tcp"/>
+  <joint name="panda_hand_tcp_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0.1034"/>
+    <parent link="panda_hand"/>
+    <child link="panda_hand_tcp"/>
+  </joint>
+  <link name="panda_leftfinger">
     <visual>
       <geometry>
         <mesh filename="package://meshes/fr3/visual/finger.dae"/>
@@ -290,7 +300,7 @@
       </geometry>
     </collision>
   </link>
-  <link name="fr3_rightfinger">
+  <link name="panda_rightfinger">
     <visual>
       <origin rpy="0 0 3.141592653589793" xyz="0 0 0"/>
       <geometry>
@@ -326,21 +336,21 @@
       </geometry>
     </collision>
   </link>
-  <joint name="fr3_finger_joint1" type="prismatic">
-    <parent link="fr3_hand"/>
-    <child link="fr3_leftfinger"/>
+  <joint name="panda_finger_joint1" type="prismatic">
+    <parent link="panda_hand"/>
+    <child link="panda_leftfinger"/>
     <origin rpy="0 0 0" xyz="0 0 0.0584"/>
     <axis xyz="0 1 0"/>
     <limit effort="100" lower="0.0" upper="0.04" velocity="0.2"/>
     <dynamics damping="0.3"/>
   </joint>
-  <joint name="fr3_finger_joint2" type="prismatic">
-    <parent link="fr3_hand"/>
-    <child link="fr3_rightfinger"/>
+  <joint name="panda_finger_joint2" type="prismatic">
+    <parent link="panda_hand"/>
+    <child link="panda_rightfinger"/>
     <origin rpy="0 0 0" xyz="0 0 0.0584"/>
     <axis xyz="0 -1 0"/>
     <limit effort="100" lower="0.0" upper="0.04" velocity="0.2"/>
-    <mimic joint="fr3_finger_joint1"/>
+    <mimic joint="panda_finger_joint1"/>
     <dynamics damping="0.3"/>
   </joint>
 </robot>

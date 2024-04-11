@@ -27,7 +27,7 @@ TRANSPARENT = pbu.RGBA(0, 0, 0, 0)
 
 ROOT_PATH = os.path.abspath(os.path.join(__file__, *[os.pardir] * 1))
 SRL_PATH = os.path.join(ROOT_PATH, "models/srl")
-PANDA_PATH = os.path.join(ROOT_PATH, "models/srl/franka_panda/panda.urdf")
+PANDA_PATH = os.path.join(ROOT_PATH, "models/srl/franka_research_panda/panda.urdf")
 
 WIDTH, HEIGHT = 640, 480
 FX, FY = 525.0 / 2, 525.0 / 2
@@ -495,8 +495,7 @@ class GroupTrajectory(Trajectory):
         self.group = group
     
     def iterate(self, state, real_controller = None, **kwargs):
-        super().iterate(state, **kwargs)
-        pbu.wait_if_gui("Good?", **kwargs)
+
 
         if(real_controller is not None):
             # current_joint_positions = real_controller.get_joint_positions(**kwargs)
@@ -506,7 +505,7 @@ class GroupTrajectory(Trajectory):
             #     path = [current_joint_positions]+path
 
             real_controller.command_group_trajectory(self.group, path, **kwargs)
-
+        return super().iterate(state, **kwargs)
 
     def reverse(self, **kwargs):
         return self.__class__(
@@ -675,9 +674,9 @@ class PandaRobot:
 
     def get_gripper_width(self, gripper_joints, **kwargs):
         [link1, link2] = self.get_finger_links(gripper_joints, **kwargs)
-        [collision_info] = pbu.get_closest_points(
+        collision_info = pbu.get_closest_points(
             self.body, self.body, link1, link2, max_distance=np.inf, **kwargs
-        )
+        )[0]
         point1 = collision_info.positionOnA
         point2 = collision_info.positionOnB
         max_width = pbu.get_distance(point1, point2)
