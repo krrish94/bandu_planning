@@ -150,12 +150,13 @@ class StackingEnvironment:
                 save_camera_images(
                     camera_image, prefix=camera_sn, directory=self.save_dir
                 )
-
+            
+            visualize_multiple_pointclouds(all_pcds)
             merged_pcds = merge_touching_pointclouds(all_pcds)
-            filtered_pcds = [remove_statistical_outliers(pcd) for pcd in merged_pcds]
-            visualize_multiple_pointclouds(filtered_pcds)
+            # filtered_pcds = [remove_statistical_outliers(pcd) for pcd in merged_pcds]
+            visualize_multiple_pointclouds(merged_pcds)
 
-            for object_index, filtered_pcd in enumerate(filtered_pcds):
+            for object_index, filtered_pcd in enumerate(merged_pcds):
                 pcd_center = np.mean(filtered_pcd, axis=0)
                 print("PCD Center: "+str(pcd_center))
                 centered_pointcloud = filtered_pcd-pcd_center

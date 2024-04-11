@@ -16,6 +16,7 @@ from segment_anything import SamAutomaticMaskGenerator, sam_model_registry
 
 import bandu_stacking.pb_utils as pbu
 from bandu_stacking.realsense_utils import CALIB_DIR
+from sklearn.cluster import DBSCAN
 
 
 
@@ -82,7 +83,7 @@ def visualize_graph(G):
     plt.show()
 
 
-def remove_statistical_outliers(pcd_array, nb_neighbors=100, std_ratio=0.01):
+def remove_statistical_outliers(pcd_array, nb_neighbors=25, std_ratio=0.5):
     """Remove statistical outliers from a point cloud.
 
     Parameters:
@@ -102,8 +103,8 @@ def remove_statistical_outliers(pcd_array, nb_neighbors=100, std_ratio=0.01):
     return np.asarray(cleaned_pcd.points)
 
 
-def merge_touching_pointclouds(pointclouds, distance_threshold=0.01):
-    """Merges point clouds that are touching based on a distance threshold.
+def merge_touching_pointclouds(pointclouds, distance_threshold=0.02, min_points=250):
+    """Merges point clouds that are touching based on a distance threshold using DBSCAN.
 
     Parameters:
     - pointclouds: List of Open3D point cloud objects.
@@ -112,44 +113,28 @@ def merge_touching_pointclouds(pointclouds, distance_threshold=0.01):
     Returns:
     - List of merged Open3D point cloud objects.
     """
+    # Concatenate all points into a single array
+    all_points = np.concatenate([np.asarray(pcd) for pcd in pointclouds], axis=0)
+    all_points = remove_statistical_outliers(all_points)
 
-    def are_touching(pcd1, pcd2, threshold):
-        """Check if two point clouds are touching based on the threshold."""
-        # Compute the minimum distance between any two points in the point clouds
-        dists = cdist(np.asarray(pcd1), np.asarray(pcd2), "euclidean")
-        min_dist = np.min(dists)
-        return min_dist < threshold
-
-    # Create a graph where an edge represents that point clouds are touching
-    num_pcds = len(pointclouds)
-    edges = []
-    for i in range(num_pcds):
-        for j in range(i + 1, num_pcds):
-            if are_touching(pointclouds[i], pointclouds[j], distance_threshold):
-                edges.append((i, j))
-
-    # Find connected components in the graph
-    from networkx import Graph, connected_components
-
-    G = Graph()
-    G.add_nodes_from(list(range(num_pcds)))
-    G.add_edges_from(edges)
-
-    # visualize_graph(G)
-
-    components = list(connected_components(G))
-
-    # Merge point clouds in each connected component
+    # Use DBSCAN to cluster all points
+    clustering = DBSCAN(eps=distance_threshold, min_samples=1).fit(all_points)
+    labels = clustering.labels_
+    
+    # Group points by their cluster label to form new point clouds
     merged_pointclouds = []
-    for component in components:
-        merged_pointclouds.append(
-            np.concatenate([pointclouds[index] for index in component])
-        )
-
+    for label in np.unique(labels):
+        # Extract points belonging to the current cluster
+        cluster_points = all_points[labels == label]
+        
+        # Create a new point cloud object for the cluster
+        merged_pcd = o3d.geometry.PointCloud()
+        merged_pcd.points = o3d.utility.Vector3dVector(cluster_points)
+        points_array = np.asarray(merged_pcd.points)
+        if(points_array.shape[0]>min_points):
+            merged_pointclouds.append(points_array)
+    
     print("Num pointclouds after merging: " + str(len(merged_pointclouds)))
-
-    # visualize_multiple_pointclouds(merged_pointclouds)
-
     return merged_pointclouds
 
 
@@ -257,7 +242,7 @@ def depth_mask_to_point_clouds(camera_image: pbu.CameraImage, masks):
         if np.mean(inliers) >= table_inlier_ratio:
             continue
 
-        mask_pointclouds.append(remove_statistical_outliers(pcd_points))
+        mask_pointclouds.append(pcd_points)
 
     # visualize_multiple_pointclouds(mask_pointclouds)
     print("Num pointclouds before merging: " + str(len(mask_pointclouds)))
