@@ -29,7 +29,7 @@ import select
 import sys
 import logging
 
-import cri.ur.rtde.serialize as serialize
+import bandu_stacking.robot.cri.cri.ur.rtde.serialize as serialize
 
 DEFAULT_TIMEOUT = 1.0
 

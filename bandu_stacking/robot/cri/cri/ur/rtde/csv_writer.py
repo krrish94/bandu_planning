@@ -23,7 +23,7 @@
 
 import csv
 
-import cri.ur.rtde.serialize as serialize
+import bandu_stacking.robot.cri.cri.ur.rtde.serialize as serialize
 
 
 class CSVWriter(object):
