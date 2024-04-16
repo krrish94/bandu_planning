@@ -1,4 +1,4 @@
-from __future__ import print_function
+from __future__ import annotations
 
 import itertools
 import math
@@ -327,9 +327,6 @@ class GroupConf(Conf):
 
 class Command(object):
 
-    def switch_client(self):
-        raise NotImplementedError
-
     @property
     def context_bodies(self):
         return set()
@@ -354,10 +351,20 @@ class Switch(Command):
         self.body = body
         self.parent = parent
 
-    def iterate(self, state, **kwargs):
+    def iterate(self, state, real_controller:RealController=None, **kwargs):
+
+        
         if self.parent is None and self.body in state.attachments.keys():
+            if(real_controller is not None):
+                real_controller.ungrasp()
             del state.attachments[self.body]
+
+
         elif self.parent is not None:
+
+            if(real_controller is not None):
+                real_controller.grasp()
+
             robot, tool_link = self.parent
 
             gripper_joints = robot.get_group_joints(GRIPPER_GROUP, **kwargs)
@@ -494,7 +501,7 @@ class GroupTrajectory(Trajectory):
         super(GroupTrajectory, self).__init__(body, joints, path, *args, **kwargs)
         self.group = group
 
-    def iterate(self, state, real_controller=None, **kwargs):
+    def iterate(self, state, real_controller:RealController=None, **kwargs):
 
         if real_controller is not None:
             # current_joint_positions = real_controller.get_joint_positions(**kwargs)
@@ -592,6 +599,14 @@ class RealController:
             self.command_group(group, position, **kwargs)
             time.sleep(dt)
 
+    def grasp(self):
+        print("[Real Robot Controller] Grasp from switch")
+        self.robot.grasp()
+
+    def ungrasp(self):
+        print("[Real Robot Controller] Ungrasp from switch")
+        self.robot.release_gripper()
+        
     def command_group(self, group, positions, **kwargs):  # TODO: default timeout
 
         if group == ARM_GROUP:
@@ -599,8 +614,10 @@ class RealController:
             self.robot.move_joints(positions_degrees)
         else:
             if list(positions)[0] > (MAX_PANDA_FINGER - 0.01):
+                print("[Real Robot Controller] Grasp from command")
                 self.robot.release_gripper()
             else:
+                print("[Real Robot Controller] Ungrasp from command")
                 self.robot.grasp()
 
     def get_joint_positions(self, **kwargs):
@@ -795,9 +812,6 @@ class Sequence(Command):  # Commands, CommandSequence
         self.context = None  # TODO: make a State?
         self.commands = tuple(commands)
         self.name = self.__class__.__name__.lower()[:3] if (name is None) else name
-
-    def switch_client(self, robot):
-        return Sequence([command.switch_client(robot) for command in self.commands])
 
     @property
     def context_bodies(self):
