@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Setup file for Common Robot Interface.
-"""
+"""Setup file for Common Robot Interface."""
 
 from setuptools import setup
 
@@ -17,6 +16,6 @@ setup(
     author_email="jlloyd237@gmail.com",
     url="https://github.com/jlloyd237/cri/",
     packages=["cri", "cri.abb", "cri.ur", "cri.ur.rtde"],
-	package_data={'cri.ur': ['rtde_config.xml']},
-    install_requires=["numpy", "transforms3d"]
+    package_data={"cri.ur": ["rtde_config.xml"]},
+    install_requires=["numpy", "transforms3d"],
 )

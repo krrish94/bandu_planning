@@ -973,6 +973,7 @@ def create_collision_shape(geometry, pose=unit_pose(), client=None, **kwargs):
         del collision_args["length"]
     return client.createCollisionShape(**collision_args)
 
+
 def get_aabb_edges(aabb):
     d = len(aabb[0])
     vertices = list(itertools.product(range(len(aabb)), repeat=d))
@@ -983,6 +984,7 @@ def get_aabb_edges(aabb):
             p2 = [aabb[i2[k]][k] for k in range(d)]
             lines.append((p1, p2))
     return lines
+
 
 def draw_aabb(aabb, **kwargs):
     return [add_line(p1, p2, **kwargs) for p1, p2 in get_aabb_edges(aabb)]
@@ -1027,7 +1029,7 @@ def get_closest_points(
 
     if results is None:
         results = []  # Strange pybullet failure case
-    
+
     return [CollisionInfo(*info) for info in results]
 
 

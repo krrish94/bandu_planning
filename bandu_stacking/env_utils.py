@@ -1,6 +1,7 @@
 from __future__ import print_function
 
 import itertools
+import math
 import os
 import time
 from collections import OrderedDict
@@ -14,7 +15,6 @@ import trimesh
 import bandu_stacking.pb_utils as pbu
 from bandu_stacking.inverse_kinematics.utils import IKFastInfo
 from bandu_stacking.robot.robot_utils import FrankaFr3
-import math
 
 GRIPPER_GROUP = "main_gripper"
 CAMERA_FRAME = "camera_frame"
@@ -474,7 +474,7 @@ class Trajectory(Command):
         positions_curve = pbu.interpolate_path(self.body, self.joints, path, **kwargs)
         return positions_curve
 
-    def iterate(self, state, teleport=False, **kwargs):            
+    def iterate(self, state, teleport=False, **kwargs):
         if teleport:
             pbu.set_joint_positions(self.body, self.joints, self.path[-1], **kwargs)
             return self.path[-1]
@@ -493,14 +493,13 @@ class GroupTrajectory(Trajectory):
         joints = body.get_group_joints(group, **kwargs)
         super(GroupTrajectory, self).__init__(body, joints, path, *args, **kwargs)
         self.group = group
-    
-    def iterate(self, state, real_controller = None, **kwargs):
 
+    def iterate(self, state, real_controller=None, **kwargs):
 
-        if(real_controller is not None):
+        if real_controller is not None:
             # current_joint_positions = real_controller.get_joint_positions(**kwargs)
             path = list(self.path)
-            
+
             # if(np.sum(np.abs(np.array(path[0])-np.array(current_joint_positions)))>0.05):
             #     path = [current_joint_positions]+path
 
@@ -581,7 +580,8 @@ class RelativePose(object):
         name = "wp" if self.parent is None else "rp"
         return "{}{}".format(name, id(self) % 1000)
 
-class RealController():
+
+class RealController:
 
     def __init__(self, body):
         self.body = body
@@ -592,16 +592,13 @@ class RealController():
             self.command_group(group, position, **kwargs)
             time.sleep(dt)
 
+    def command_group(self, group, positions, **kwargs):  # TODO: default timeout
 
-    def command_group(
-        self, group, positions, **kwargs
-    ):  # TODO: default timeout
-        
-        if(group == ARM_GROUP):
+        if group == ARM_GROUP:
             positions_degrees = [math.degrees(p) for p in positions]
             self.robot.move_joints(positions_degrees)
         else:
-            if(list(positions)[0] > (MAX_PANDA_FINGER-0.01)):
+            if list(positions)[0] > (MAX_PANDA_FINGER - 0.01):
                 self.robot.release_gripper()
             else:
                 self.robot.grasp()
@@ -609,7 +606,7 @@ class RealController():
     def get_joint_positions(self, **kwargs):
         return [math.radians(angle) for angle in self.robot.joint_angles]
 
-        
+
 class PandaRobot:
     def __init__(
         self,

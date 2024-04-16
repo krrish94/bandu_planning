@@ -13,30 +13,26 @@ import trimesh
 from roipoly import RoiPoly
 from scipy.spatial.distance import cdist
 from segment_anything import SamAutomaticMaskGenerator, sam_model_registry
+from sklearn.cluster import DBSCAN
 
 import bandu_stacking.pb_utils as pbu
 from bandu_stacking.realsense_utils import CALIB_DIR
-from sklearn.cluster import DBSCAN
-
 
 
 def obj_file_from_mesh(mesh, under=True):
-    """
-    Creates a *.obj mesh string
-    :param mesh: tuple of list of vertices and list of faces
-    :return: *.obj mesh string
-    """
+    """Creates a *.obj mesh string :param mesh: tuple of list of vertices and
+    list of faces :return: *.obj mesh string."""
     vertices, faces = mesh.vertices, mesh.triangles
-    s = 'g Mesh\n' # TODO: string writer
+    s = "g Mesh\n"  # TODO: string writer
     for v in vertices:
-        assert(len(v) == 3)
-        s += '\nv {}'.format(' '.join(map(str, v)))
+        assert len(v) == 3
+        s += "\nv {}".format(" ".join(map(str, v)))
     for f in faces:
-        #assert(len(f) == 3) # Not necessarily true
-        f = [i+1 for i in f] # Assumes mesh is indexed from zero
-        s += '\nf {}'.format(' '.join(map(str, f)))
+        # assert(len(f) == 3) # Not necessarily true
+        f = [i + 1 for i in f]  # Assumes mesh is indexed from zero
+        s += "\nf {}".format(" ".join(map(str, f)))
         if under:
-            s += '\nf {}'.format(' '.join(map(str, reversed(f))))
+            s += "\nf {}".format(" ".join(map(str, reversed(f))))
     return s
 
 
@@ -104,7 +100,8 @@ def remove_statistical_outliers(pcd_array, nb_neighbors=25, std_ratio=0.5):
 
 
 def merge_touching_pointclouds(pointclouds, distance_threshold=0.02, min_points=250):
-    """Merges point clouds that are touching based on a distance threshold using DBSCAN.
+    """Merges point clouds that are touching based on a distance threshold
+    using DBSCAN.
 
     Parameters:
     - pointclouds: List of Open3D point cloud objects.
@@ -120,20 +117,20 @@ def merge_touching_pointclouds(pointclouds, distance_threshold=0.02, min_points=
     # Use DBSCAN to cluster all points
     clustering = DBSCAN(eps=distance_threshold, min_samples=1).fit(all_points)
     labels = clustering.labels_
-    
+
     # Group points by their cluster label to form new point clouds
     merged_pointclouds = []
     for label in np.unique(labels):
         # Extract points belonging to the current cluster
         cluster_points = all_points[labels == label]
-        
+
         # Create a new point cloud object for the cluster
         merged_pcd = o3d.geometry.PointCloud()
         merged_pcd.points = o3d.utility.Vector3dVector(cluster_points)
         points_array = np.asarray(merged_pcd.points)
-        if(points_array.shape[0]>min_points):
+        if points_array.shape[0] > min_points:
             merged_pointclouds.append(points_array)
-    
+
     print("Num pointclouds after merging: " + str(len(merged_pointclouds)))
     return merged_pointclouds
 

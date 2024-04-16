@@ -1,28 +1,26 @@
 # -*- coding: utf-8 -*-
-"""Simple test script for AsyncRobot class using FrankxController.
-"""
+"""Simple test script for AsyncRobot class using FrankxController."""
 
 import time
 
 import numpy as np
-
-from cri.robot import SyncRobot, AsyncRobot
 from cri.controller import PyfrankaController
+from cri.robot import AsyncRobot, SyncRobot
 
 np.set_printoptions(precision=2, suppress=True)
 
 
 def main():
     base_frame = (0, 0, 0, 0, 0, 0)
-    work_frame = (400, 0, 300, 180, 0, 180)   # base frame: x->front, y->left, z->down
-    home_joint = (0.01,  -44.87,    0.03, -135.02,   -0.1,    89.96,   44.98)
+    work_frame = (400, 0, 300, 180, 0, 180)  # base frame: x->front, y->left, z->down
+    home_joint = (0.01, -44.87, 0.03, -135.02, -0.1, 89.96, 44.98)
 
-    with AsyncRobot(SyncRobot(PyfrankaController(ip='192.168.1.11'))) as robot:
-    # with SyncRobot(PyfrankaController(ip='192.168.1.11')) as robot:
+    with AsyncRobot(SyncRobot(PyfrankaController(ip="192.168.1.11"))) as robot:
+        # with SyncRobot(PyfrankaController(ip='192.168.1.11')) as robot:
         controller = robot.sync_robot.controller
 
         # Set robot axes and TCP
-        robot.axes = 'sxyz'     # static/extrinsic frame xyz convention
+        robot.axes = "sxyz"  # static/extrinsic frame xyz convention
         robot.tcp = (0, 0, 75, 0, 0, 225)
 
         # Set Franka-specific robot parameters
@@ -46,7 +44,7 @@ def main():
         # print("Moving to origin of work frame ...")
         # robot.move_linear((0, 0, 0, 0, 0, 0))
         # print("Pose at origin of work frame: {}".format(robot.pose))
-        
+
         # Test move linear velocity
         # print("Moving forward with constant velocity in x direction ...")
         controller.move_linear_velocity((30, 0, 0, 0, 0, 0))
@@ -112,5 +110,5 @@ def main():
         # print("Final pose in work frame: {}".format(robot.pose))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

@@ -1,27 +1,25 @@
 # -*- coding: utf-8 -*-
-"""Simple test script for AsyncRobot class using FrankxController.
-"""
+"""Simple test script for AsyncRobot class using FrankxController."""
 
 import time
 
 import numpy as np
-
-from cri.robot import SyncRobot
 from cri.controller import PyfrankaController
+from cri.robot import SyncRobot
 
 np.set_printoptions(precision=2, suppress=True)
 
 
 def main():
     base_frame = (0, 0, 0, 0, 0, 0)
-    work_frame = (400, 0, 300, 180, 0, 180)   # base frame: x->front, y->left, z->down
+    work_frame = (400, 0, 300, 180, 0, 180)  # base frame: x->front, y->left, z->down
     grasp_width = 0.02  # m
     grasp_speed = 0.01  # m/s
-    grasp_force = 1.0   # N
+    grasp_force = 1.0  # N
 
-    with SyncRobot(PyfrankaController(ip='192.168.1.11')) as robot:
+    with SyncRobot(PyfrankaController(ip="192.168.1.11")) as robot:
         # Set robot axes and TCP
-        robot.axes = 'sxyz'     # static/extrinsic frame xyz convention
+        robot.axes = "sxyz"  # static/extrinsic frame xyz convention
         robot.tcp = (0, 0, 95, 0, 0, 225)
 
         # Set Franka-specific robot parameters
@@ -54,13 +52,17 @@ def main():
 
         # Increase and decrease all joint angles
         print("Increasing and decreasing all joint angles ...")
-        robot.move_joints(robot.joint_angles + (10,)*7)
+        robot.move_joints(robot.joint_angles + (10,) * 7)
 
-        print("Target joint angles after increase: {}".format(robot.target_joint_angles))
+        print(
+            "Target joint angles after increase: {}".format(robot.target_joint_angles)
+        )
         print("Joint angles after increase: {}".format(robot.joint_angles))
         gripper.grasp(grasp_width, grasp_speed, grasp_force)
-        robot.move_joints(robot.joint_angles - (10,)*7)
-        print("Target joint angles after decrease: {}".format(robot.target_joint_angles))
+        robot.move_joints(robot.joint_angles - (10,) * 7)
+        print(
+            "Target joint angles after decrease: {}".format(robot.target_joint_angles)
+        )
         print("Joint angles after decrease: {}".format(robot.joint_angles))
         gripper.homing()
 
@@ -101,5 +103,5 @@ def main():
         # print("Final pose in work frame: {}".format(robot.pose))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

@@ -1,23 +1,28 @@
 # -*- coding: utf-8 -*-
-"""Simple test script for AsyncRobot class using RTDEController.
-"""
+"""Simple test script for AsyncRobot class using RTDEController."""
 
-import time
 import threading
+import time
 
 import numpy as np
-
-from cri.robot import SyncRobot, AsyncRobot
 from cri.controller import RTDEController
+from cri.robot import AsyncRobot, SyncRobot
 
 np.set_printoptions(precision=2, suppress=True)
 
 
 def main():
-    work_frame = (109.1, -487.0, 341.3, 180, 0, -90)  # base frame: x->right, y->back, z->up
+    work_frame = (
+        109.1,
+        -487.0,
+        341.3,
+        180,
+        0,
+        -90,
+    )  # base frame: x->right, y->back, z->up
     #     work_frame = (487.0, -109.1, 341.3, 180, 0, 180)    # base frame: x->front, y->right, z->up
 
-    with AsyncRobot(SyncRobot(RTDEController(ip='192.11.72.10'))) as robot:
+    with AsyncRobot(SyncRobot(RTDEController(ip="192.11.72.10"))) as robot:
         # For testing in URSim simulator
         #    with AsyncRobot(SyncRobot(RTDEController(ip='127.0.0.1'))) as robot:
         # Set TCP, linear speed,  angular speed and coordinate frame
@@ -68,7 +73,7 @@ def main():
         lock = threading.Lock()
         velocity = (0, 0, 0, 0, 0, 0)
         accel = 10
-        ret_time = 1/30
+        ret_time = 1 / 30
 
         def worker():
             while running:
@@ -76,7 +81,9 @@ def main():
                     worker_velocity = velocity
                     worker_accel = accel
                     worker_ret_time = ret_time
-                controller.move_linear_velocity(worker_velocity, worker_accel, worker_ret_time)
+                controller.move_linear_velocity(
+                    worker_velocity, worker_accel, worker_ret_time
+                )
 
         thread = threading.Thread(target=worker, args=[], kwargs={})
         running = True
@@ -115,5 +122,5 @@ def main():
         print("Final pose in work frame: {}".format(robot.pose))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

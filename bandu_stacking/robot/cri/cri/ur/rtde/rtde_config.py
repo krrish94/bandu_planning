@@ -23,18 +23,20 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+import os
+import sys
 import xml.etree.ElementTree as ET
-import os, sys
 
 
 class Recipe(object):
-    __slots__=['key', 'names', 'types']
+    __slots__ = ["key", "names", "types"]
+
     @staticmethod
     def parse(recipe_node):
         rmd = Recipe()
-        rmd.key = recipe_node.get('key')
-        rmd.names = [f.get('name') for f in recipe_node.findall('field')]
-        rmd.types = [f.get('type') for f in recipe_node.findall('field')]
+        rmd.key = recipe_node.get("key")
+        rmd.names = [f.get("name") for f in recipe_node.findall("field")]
+        rmd.types = [f.get("type") for f in recipe_node.findall("field")]
         return rmd
 
 
@@ -43,9 +45,9 @@ class ConfigFile(object):
         self.__filename = filename
         tree = ET.parse(self.__filename)
         root = tree.getroot()
-        recipes = [Recipe.parse(r) for r in root.findall('recipe')]
+        recipes = [Recipe.parse(r) for r in root.findall("recipe")]
         self.__dictionary = {r.key: r for r in recipes}
-        
+
     def get_recipe(self, key):
         r = self.__dictionary[key]
         return r.names, r.types

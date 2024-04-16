@@ -1,24 +1,23 @@
-""" High-level manipulation wrapper for franka-robot
-"""
+"""High-level manipulation wrapper for franka-robot."""
+
 from __future__ import annotations
-import numpy as np
-from scipy.spatial.transform import Rotation as R
-import open3d as o3d
-import cv2
+
+import json
+import math
+import os
+import shutil
 import time
 from typing import Tuple
-from bandu_stacking.robot.cri.cri.robot import SyncRobot
-from bandu_stacking.robot.cri.cri.controller import PyfrankaController
+
 import cv2
-import numpy as np
-import json
-import os
-import open3d as o3d
 import matplotlib.pyplot as plt
+import numpy as np
+import open3d as o3d
 from matplotlib import colors
 from scipy.spatial.transform import Rotation as R
-import shutil
-import math
+
+from bandu_stacking.robot.cri.cri.controller import PyfrankaController
+from bandu_stacking.robot.cri.cri.robot import SyncRobot
 
 ## ==== DLO Utills ==== ##
 
@@ -98,7 +97,8 @@ def draw_bbox_interactively(image):
 
 
 def reisze_and_normalize_image(image, image_size):
-    """Resize the image to the specified size while maintaining the aspect ratio."""
+    """Resize the image to the specified size while maintaining the aspect
+    ratio."""
     # Get the current dimensions of the input image
     height, width = image.shape[:2]
 
@@ -231,7 +231,7 @@ def save_to_bop(
 
 
 def euler2mat(pose_e, rot_unit="deg", trans_unit="mm") -> np.ndarray:
-    """Convert euler pose to matrix"""
+    """Convert euler pose to matrix."""
     x, y, z, ex, ey, ez = pose_e
     if rot_unit == "deg":
         ex = math.radians(ex)
@@ -271,7 +271,7 @@ def euler2mat(pose_e, rot_unit="deg", trans_unit="mm") -> np.ndarray:
 
 
 def mat2euler(pose_m):
-    """Convert matrix to euler pose"""
+    """Convert matrix to euler pose."""
     R = pose_m[:3, :3]
     trans = pose_m[:3, 3]
     yaw = math.atan2(R[1, 0], R[0, 0])
@@ -284,7 +284,7 @@ def mat2euler(pose_m):
 
 
 def quat2mat(pos_quat, rot_unit="deg", trans_unit="mm"):
-    """Convert the (pos, quat) representation to mat"""
+    """Convert the (pos, quat) representation to mat."""
     T = np.eye(4, dtype=np.float32)
     if trans_unit == "mm":
         T[:3, 3] = pos_quat[:3] / 1000.0
@@ -298,7 +298,7 @@ def quat2mat(pos_quat, rot_unit="deg", trans_unit="mm"):
 
 
 def compute_angular_velocity(R_s, R_g, t):
-    """Rotate from R_s to R_t using time t, return angular velocity"""
+    """Rotate from R_s to R_t using time t, return angular velocity."""
     R_gs = R_g @ np.linalg.inv(R_s)
     axis, angle = rotation_matrix_to_axis_angle(R_gs)
     if np.abs(angle) < 1e-6:
@@ -310,14 +310,14 @@ def compute_angular_velocity(R_s, R_g, t):
 
 
 def compute_angular_period(R_s, R_g, vel_a):
-    """Compute the minimum period from R_s to R_g under vel_a"""
+    """Compute the minimum period from R_s to R_g under vel_a."""
     R_gs = R_g @ np.linalg.inv(R_s)
     axis, angle = rotation_matrix_to_axis_angle(R_gs)
     return angle / vel_a
 
 
 def rotation_matrix_to_axis_angle(R):
-    """Convert a rotation matrix to axis-angle representation"""
+    """Convert a rotation matrix to axis-angle representation."""
     angle = np.arccos((np.trace(R) - 1) / 2)
     x = (R[2, 1] - R[1, 2]) / (2 * np.sin(angle) + 1e-6)
     y = (R[0, 2] - R[2, 0]) / (2 * np.sin(angle) + 1e-6)
@@ -339,7 +339,7 @@ def read_robot_state_from_file(file_path):
 
 
 def o3d_create_plane():
-    """Create an o3d plane"""
+    """Create an o3d plane."""
     # Define vertices of the plane
     vertices = np.array(
         [
@@ -380,7 +380,7 @@ def o3d_create_plane():
 
 
 def create_cube(size=1.0):
-    """Create a cube with the given size"""
+    """Create a cube with the given size."""
     # The center of the cube will be the origin
     half_size = size / 2.0
     vertices = [
@@ -451,7 +451,7 @@ def dict_to_pointcloud(data: dict) -> o3d.geometry.PointCloud:
 def show_traj(
     pose_list: list, color_list: list | None = None, pose_type: str = "euler", size=0.1
 ):
-    """Show trajectories in open3d, euler is the default format"""
+    """Show trajectories in open3d, euler is the default format."""
     vis_list = []
     for i, pose in enumerate(pose_list):
         if pose_type == "euler":
@@ -472,7 +472,7 @@ def show_traj(
 
 
 def load_socket_connector(data_folder: str, model_type: str):
-    """load geometry model, only for cable_manip"""
+    """Load geometry model, only for cable_manip."""
     cad_dict = {
         "amp_socket": 1,
         "amp_connector": 2,
@@ -521,18 +521,21 @@ def generate_video(frames, video_name="video.mp4"):
 
 
 def interpolate_action(cur_pose: np.ndarray, goal_pose: np.ndarray, num_step: int):
-    """cur_pose, goal_pose are all transition"""
+    """cur_pose, goal_pose are all transition."""
     diff_pose = goal_pose - cur_pose  # (action_dim)
     step_size = 1.0 / num_step
     steps = np.linspace(start=0.5, stop=1.0, num=num_step)
-    actions = cur_pose[None, :] + diff_pose[None, :] * steps[:, None]  # (num_step, action_dim)
+    actions = (
+        cur_pose[None, :] + diff_pose[None, :] * steps[:, None]
+    )  # (num_step, action_dim)
     return actions
+
 
 ## ==== Print Utills ==== ##
 
 
 def print_pose(pose: np.ndarray):
-    pose_str =  [str(v) for v in pose.flatten().tolist()]
+    pose_str = [str(v) for v in pose.flatten().tolist()]
     print(",".join(pose_str))
 
 
@@ -560,6 +563,7 @@ def get_pointcloud(depth, intrinsic):
 
 import numpy as np
 from scipy.spatial.transform import Rotation as R
+
 
 def apply_random_noise_to_transform(T, r_noise_level, t_noise_level, seed):
     """Apply a random noise to SE3 transformation with a given seed.
@@ -603,12 +607,8 @@ def apply_random_noise_to_transform(T, r_noise_level, t_noise_level, seed):
     return T_noisy
 
 
-
 HOME_JOINT = (0.01, -44.87, 0.03, -135.02, -0.1, 89.96, 44.98)
-TOP_DOWN_R = np.array(
-    [[1.0, 0.0, 0.0],
-     [0.0, -1.0, -0.0],
-     [0.0, 0.0, -1.0]])
+TOP_DOWN_R = np.array([[1.0, 0.0, 0.0], [0.0, -1.0, -0.0], [0.0, 0.0, -1.0]])
 HOVER_HEIGHT = 0.1
 INSERT_DEPTH = 0.1
 MAX_TRY = 10
@@ -625,48 +625,58 @@ JOINT_SPEED_LIMIT = 1.0
 
 
 class FrankaFr3:
-    """Robot Manipulator, using CRI as control interface"""
+    """Robot Manipulator, using CRI as control interface."""
 
-    def __init__(self, robot_ip: str, c_T_x: np.ndarray=np.eye(4, dtype=np.float32), calib_type: str = "c2f"):
+    def __init__(
+        self,
+        robot_ip: str,
+        c_T_x: np.ndarray = np.eye(4, dtype=np.float32),
+        calib_type: str = "c2f",
+    ):
         """Different calibration type will influence your final results.
-            c2f: camera to flange. We use this mode, when camera is mounted on the wrist.
+
+        c2f: camera to flange. We use this mode, when camera is mounted on the wrist.
         """
         self.robot = SyncRobot(PyfrankaController(ip=robot_ip))
         self.controller = self.robot.controller
         self.gripper = self.controller.gripper
 
         # Set parameters
-        self.robot.axes = 'sxyz'
+        self.robot.axes = "sxyz"
         # self.robot.tcp = (0, 0, 0, 0, 0, 0)
 
-        self.controller.set_joint_impedance(
-            (3000, 3000, 3000, 2500, 2500, 2000, 2000))
+        self.controller.set_joint_impedance((3000, 3000, 3000, 2500, 2500, 2000, 2000))
         self.controller.rel_velocity = 0.1
         self.controller.rel_accel = 0.1
         self.controller.rel_jerk = 0.1
 
         # Grasp-related: Hover matrix
         self.is_grasping = False
-        self.h_T_g = np.array([
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, HOVER_HEIGHT],
-            [0.0, 0.0, 0.0, 1.0]
-        ])
+        self.h_T_g = np.array(
+            [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, HOVER_HEIGHT],
+                [0.0, 0.0, 0.0, 1.0],
+            ]
+        )
         self.g_T_h = np.linalg.inv(self.h_T_g)
 
         # Insert-related: Insert matrix
-        r_o_T_e = R.from_euler('XYZ', np.array(
-            [0.0, np.pi/2.0, np.pi])).as_matrix()  # object to ee (default)
+        r_o_T_e = R.from_euler(
+            "XYZ", np.array([0.0, np.pi / 2.0, np.pi])
+        ).as_matrix()  # object to ee (default)
         self.o_T_e = np.eye(4, dtype=np.float64)
         self.o_T_e[:3, :3] = r_o_T_e
 
-        self.i_T_g = np.array([
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, -INSERT_DEPTH],
-            [0.0, 0.0, 0.0, 1.0]
-        ])
+        self.i_T_g = np.array(
+            [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, -INSERT_DEPTH],
+                [0.0, 0.0, 0.0, 1.0],
+            ]
+        )
         self.g_T_i = np.linalg.inv(self.i_T_g)
         self.update_calib(c_T_x, calib_type)
 
@@ -677,15 +687,19 @@ class FrankaFr3:
         print(euler2mat(self.robot.pose))
         print("Franka is initialized...")
 
-    def reset(self, joint_val: tuple | None = None, pose: np.ndarray | None = None, with_gripper: bool = True):
+    def reset(
+        self,
+        joint_val: tuple | None = None,
+        pose: np.ndarray | None = None,
+        with_gripper: bool = True,
+    ):
         if pose is None:
             joint_val_d = joint_val if joint_val is not None else HOME_JOINT
             self.move_joints(joint_val_d)
             if with_gripper:
                 self.gripper.homing()
         else:
-            assert pose.shape == (
-                4, 4), "Pose should be a transformation matrix"
+            assert pose.shape == (4, 4), "Pose should be a transformation matrix"
             self.move_linear(pose)
         self.update_tf()
         print("Franka is reset to home position...")
@@ -714,10 +728,14 @@ class FrankaFr3:
 
     def update_tf(self):
         if self.calib_type == "c2f":
-            f_T_ee = np.array([[1.0, 0.0, 0.0, 0.0],
-                               [0.0, 1.0, 0.0, 0.0],
-                               [0.0, 0.0, 1.0, 0.1],
-                               [0.0, 0.0, 0.0, 1.0]])
+            f_T_ee = np.array(
+                [
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.1],
+                    [0.0, 0.0, 0.0, 1.0],
+                ]
+            )
             b_T_ee = euler2mat(self.pose)
             b_T_f = b_T_ee @ np.linalg.inv(f_T_ee)
             # b_T_f = euler2mat(self.pose)
@@ -729,11 +747,11 @@ class FrankaFr3:
             self.c_T_b = np.linalg.inv(self.b_T_c)
 
     #### Task-related action ####
-    def grasp_at(self, pos: np.ndarray, periods: list, coords: str = 'robot'):
+    def grasp_at(self, pos: np.ndarray, periods: list, coords: str = "robot"):
         """Args:
-            - coords: coordinate should be 'robot' or 'camera'
+        - coords: coordinate should be 'robot' or 'camera'
         """
-        if coords == 'camera':
+        if coords == "camera":
             self.update_tf()
             if pos.shape == (4, 4):
                 b_T_g = self.b_T_c @ pos
@@ -745,7 +763,7 @@ class FrankaFr3:
                 b_T_g[:3, 3] = pos[:3, 0]
             else:
                 raise ValueError("pos shape is not supported.")
-        elif coords == 'robot':
+        elif coords == "robot":
             if pos.shape == (3,) or pos.shape == (3, 1):  # Only position is provided
                 b_T_g = np.eye(4, dtype=np.float64)
                 b_T_g[:3, :3] = TOP_DOWN_R  # By default use top-down
@@ -769,24 +787,23 @@ class FrankaFr3:
         trajs.append(self.move_linear_within_time(b_T_g, periods[1]))
 
         # grasp
-        self.gripper.grasp(GRASP_WIDTH, GRASP_SPEED,
-                           GRASP_FORCE, EPS_INNER, EPS_OUTER)
+        self.gripper.grasp(GRASP_WIDTH, GRASP_SPEED, GRASP_FORCE, EPS_INNER, EPS_OUTER)
 
         # move back to hold position
         trajs.append(self.move_linear_within_time(b_T_h, periods[2]))
         return trajs
 
-    def insert_at(self, pos: np.ndarray, periods, coords: str = 'robot'):
+    def insert_at(self, pos: np.ndarray, periods, coords: str = "robot"):
         """Args:
-            - pose: a coordinate frame located at the center of the hole, 
-                with z-axis pointing out, y-axis along the gripper's y-axis
-            - coords: coordinate should be 'robot' or 'camera'
+        - pose: a coordinate frame located at the center of the hole,
+            with z-axis pointing out, y-axis along the gripper's y-axis
+        - coords: coordinate should be 'robot' or 'camera'
         """
         if pos.shape == (6,) or pos.shape == (6, 1):
             pos = euler2mat(pos)
         assert pos.shape == (4, 4), "Insertion pos must be a (6,) or (4, 4)"
 
-        if coords == 'camera':
+        if coords == "camera":
             b_T_g = self.b_T_c @ pos
         else:
             b_T_g = pos
@@ -816,8 +833,7 @@ class FrankaFr3:
         self.is_grasping = False
 
     def grasp(self, grasp_width=GRASP_WIDTH):
-        self.gripper.grasp(grasp_width, GRASP_SPEED,
-                           GRASP_FORCE, EPS_INNER, EPS_OUTER)
+        self.gripper.grasp(grasp_width, GRASP_SPEED, GRASP_FORCE, EPS_INNER, EPS_OUTER)
         self.is_grasping = True
 
     def move_gripper(self, width: float):
@@ -828,7 +844,7 @@ class FrankaFr3:
         self.is_grasping = False
 
     def move_linear(self, pose: np.ndarray):
-        """Robust wrapper of move linear, try multiple times until succeed"""
+        """Robust wrapper of move linear, try multiple times until succeed."""
         if pose.shape == (6,) or pose.shape == (6, 1):
             pos_euler = pose
         elif pose.shape == (4, 4):
@@ -849,7 +865,7 @@ class FrankaFr3:
                 print(f"Move linear, error: {str(e)} in No.{i} try.")
 
     def move_joints(self, joints: Tuple):
-        """Robust wrapper of move joints, try multiple times until succeed"""
+        """Robust wrapper of move joints, try multiple times until succeed."""
         for i in range(MAX_TRY):
             try:
                 self.robot.move_joints(joints)
@@ -859,7 +875,8 @@ class FrankaFr3:
                 print(f"Move joint, error: {str(e)} in No.{i} try.")
 
     def move_linear_velocity(self, velocity: np.ndarray, t: float):
-        """Move with linear velocity
+        """Move with linear velocity.
+
         Args:
             - velocity: (x, y, z, wx, wy, wz)
             - t: sec
@@ -871,11 +888,10 @@ class FrankaFr3:
                 break  # Quit after executed
             except Exception as e:
                 self.controller.recover_from_errors()
-                print(
-                    f"Move linear using velocity, error: {str(e)} in No.{i} try.")
+                print(f"Move linear using velocity, error: {str(e)} in No.{i} try.")
 
     def move_joint_velocity(self, velocity: np.ndarray, t: float):
-        """Move with joint velocity"""
+        """Move with joint velocity."""
         for i in range(MAX_TRY):
             try:
                 self.robot.controller.move_joints_velocity(velocity)
@@ -883,12 +899,12 @@ class FrankaFr3:
                 break
             except Exception as e:
                 self.controller.recover_from_errors()
-                print(
-                    f"Move joint using velocity, error: {str(e)} in No.{i} try.")
+                print(f"Move joint using velocity, error: {str(e)} in No.{i} try.")
 
     #### PID Control ####
     def pid_position_control(self, goal_pose):
-        """Set goal using pid position control; Convert position goal to velocity control"""
+        """Set goal using pid position control; Convert position goal to
+        velocity control."""
         K_p = 1.0
         K_i = 0.1
         K_d = 0.1
@@ -905,10 +921,16 @@ class FrankaFr3:
         # smooth when near it using tanh
         # diff compared with speed movement
         diff_scale = np.linalg.norm(trans_diff) / decrease_region
-        trans_vel = np.tanh(diff_scale) * trans_diff / \
-            np.linalg.norm(trans_diff) * lin_speed
+        trans_vel = (
+            np.tanh(diff_scale) * trans_diff / np.linalg.norm(trans_diff) * lin_speed
+        )
         #
-        velocity = np.zeros([6,], dtype=np.float32)
+        velocity = np.zeros(
+            [
+                6,
+            ],
+            dtype=np.float32,
+        )
         velocity[:3] = trans_vel
         # Convert back to mm & degree
         velocity[:3] = velocity[:3] * 1000.0
@@ -916,7 +938,8 @@ class FrankaFr3:
         # self.move_linear_velocity(velocity=velocity, t=t_step)
 
     def pid_joint_control(self, goal_joint):
-        """Set goal using pid position control; Convert position goal to velocity control"""
+        """Set goal using pid position control; Convert position goal to
+        velocity control."""
         K_p = 1.0
         K_i = 0.1
         K_d = 0.1
@@ -936,8 +959,11 @@ class FrankaFr3:
         self.move_joint_velocity(velocity=velocity, t=t_step)
 
     #### Motion generator ####
-    def move_linear_within_time(self, goal_pose, period: float, early_stop: bool = True, stop: bool = True):
-        """Move to goal pose in period with a constant speed
+    def move_linear_within_time(
+        self, goal_pose, period: float, early_stop: bool = True, stop: bool = True
+    ):
+        """Move to goal pose in period with a constant speed.
+
         Args:
             - early_stop: If we want to early stop if we didn't reach the goal (meaning stop at collision)
         """
@@ -955,10 +981,10 @@ class FrankaFr3:
         R_g = T_g[:3, :3]
 
         # Check the speed limit
-        period_lin_min = float(np.linalg.norm(
-            T_g[:3, 3] - T_s[:3, 3]) / LINER_SPEED_LIMIT)
-        period_ang_min = float(compute_angular_period(
-            R_s, R_g, ANGULAR_SPEED_LIMIT))
+        period_lin_min = float(
+            np.linalg.norm(T_g[:3, 3] - T_s[:3, 3]) / LINER_SPEED_LIMIT
+        )
+        period_ang_min = float(compute_angular_period(R_s, R_g, ANGULAR_SPEED_LIMIT))
         period = max(period, max(period_ang_min, period_lin_min))
 
         num_step = np.floor(period / MIN_TIME_STEP).astype(int)
@@ -994,13 +1020,13 @@ class FrankaFr3:
         # print(f"Finished, pose: {self.robot.pose.tolist()}")
         # Stop after motion
         if stop:
-            self.move_linear_velocity(
-                np.zeros(6, dtype=np.float64), MIN_TIME_STEP)
+            self.move_linear_velocity(np.zeros(6, dtype=np.float64), MIN_TIME_STEP)
         return traj, traj_finishsed
 
-    def move_towards_linear_within_time(self, goal_pose, period: float, stop: bool = True):
-        """Move towards goal pose with a constant speed for period
-        """
+    def move_towards_linear_within_time(
+        self, goal_pose, period: float, stop: bool = True
+    ):
+        """Move towards goal pose with a constant speed for period."""
         traj = []
         traj_finishsed = True
         start_pose = self.robot.pose
@@ -1018,14 +1044,12 @@ class FrankaFr3:
         num_step = np.floor(period / MIN_TIME_STEP).astype(int)
         linear_vel = (T_g[:3, 3] - T_s[:3, 3]) / period
         angular_vel = compute_angular_velocity(R_s, R_g, period)
-        period_ang_min = float(compute_angular_period(
-            R_s, R_g, ANGULAR_SPEED_LIMIT))
+        period_ang_min = float(compute_angular_period(R_s, R_g, ANGULAR_SPEED_LIMIT))
 
         # normalize the speed
         if np.linalg.norm(linear_vel) > LINER_SPEED_LIMIT:
             # saturate with max_speed
-            linear_vel = linear_vel / \
-                np.linalg.norm(linear_vel) * LINER_SPEED_LIMIT
+            linear_vel = linear_vel / np.linalg.norm(linear_vel) * LINER_SPEED_LIMIT
         if period < period_ang_min:
             angular_vel = compute_angular_velocity(R_s, R_g, period_ang_min)
 
@@ -1058,18 +1082,16 @@ class FrankaFr3:
         # print(f"Finished, pose: {self.robot.pose.tolist()}")
         # Stop after motion
         if stop:
-            self.move_linear_velocity(
-                np.zeros(6, dtype=np.float64), MIN_TIME_STEP)
+            self.move_linear_velocity(np.zeros(6, dtype=np.float64), MIN_TIME_STEP)
         return traj, traj_finishsed
 
     def move_joints_within_time(self, goal_joint, period: float, stop: bool = True):
-        """Move to goal joint in period with a constant speed"""
+        """Move to goal joint in period with a constant speed."""
         traj = []
         start_joint = self.robot.joint_angles
 
         # Check the speed limit
-        preiod_min = float(np.linalg.norm(
-            goal_joint - start_joint) / JOINT_SPEED_LIMIT)
+        preiod_min = float(np.linalg.norm(goal_joint - start_joint) / JOINT_SPEED_LIMIT)
         preiod = max(period, preiod_min)
 
         joint_vel = (goal_joint - start_joint) / period
@@ -1084,27 +1106,24 @@ class FrankaFr3:
             traj.append((system_time, self.robot.pose.tolist()))
         # Stop after motion
         if stop:
-            self.move_joint_velocity(
-                np.zeros(7, dtype=np.float64), MIN_TIME_STEP)
+            self.move_joint_velocity(np.zeros(7, dtype=np.float64), MIN_TIME_STEP)
         return traj
 
     def idle(self):
-        """Stop moving"""
+        """Stop moving."""
         try:
-            self.move_linear_velocity(
-                np.zeros(6, dtype=np.float64), MIN_TIME_STEP)
+            self.move_linear_velocity(np.zeros(6, dtype=np.float64), MIN_TIME_STEP)
         except Exception as e:
             pass
         try:
-            self.move_joint_velocity(
-                np.zeros(7, dtype=np.float64), MIN_TIME_STEP)
+            self.move_joint_velocity(np.zeros(7, dtype=np.float64), MIN_TIME_STEP)
         except Exception as e:
             pass
 
     #### Property ####
     @property
     def pose(self):
-        """Return a (pos (mm), euler (degree)) structure"""
+        """Return a (pos (mm), euler (degree)) structure."""
         return self.robot.pose
 
     @property
@@ -1113,7 +1132,7 @@ class FrankaFr3:
 
     @property
     def flange_pose(self):
-        """Return a (pos (m), quat (radius)) structure"""
+        """Return a (pos (m), quat (radius)) structure."""
         return self.robot.controller.flange_pose
 
     #### Visualization ####
@@ -1127,15 +1146,13 @@ class FrankaFr3:
         vis_list.append(pcd)
 
         # Show camera coordinate
-        camera_origin = o3d.geometry.TriangleMesh.create_coordinate_frame(
-            size=0.02)
+        camera_origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.02)
         camera_origin.paint_uniform_color([1.0, 0.0, 0.0])
         vis_list.append(camera_origin)
 
         # Show robot coordinate
         self.update_tf()
-        robot_origin = o3d.geometry.TriangleMesh.create_coordinate_frame(
-            size=0.1)
+        robot_origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)
         robot_origin.transform(self.c_T_b)
         vis_list.append(robot_origin)
 
@@ -1146,8 +1163,7 @@ class FrankaFr3:
 
         # Show external coordinate
         for coord in coord_lists:
-            origin = o3d.geometry.TriangleMesh.create_coordinate_frame(
-                size=0.02)
+            origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.02)
             origin.transform(coord)
             vis_list.append(origin)
         o3d.visualization.draw_geometries(vis_list)

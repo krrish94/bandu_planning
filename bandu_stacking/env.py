@@ -2,6 +2,7 @@ from __future__ import print_function
 
 import copy
 import os
+import pickle
 import random
 import time
 from os import listdir
@@ -10,7 +11,7 @@ from os.path import isfile, join
 import numpy as np
 import pybullet as p
 import pybullet_utils.bullet_client as bc
-import pickle
+
 import bandu_stacking.pb_utils as pbu
 from bandu_stacking.env_utils import (
     ARM_GROUP,
@@ -18,12 +19,12 @@ from bandu_stacking.env_utils import (
     TABLE_AABB,
     TABLE_POSE,
     PandaRobot,
+    RealController,
     WorldState,
     create_default_env,
     create_pybullet_block,
     get_absolute_pose,
     get_current_confs,
-    RealController
 )
 from bandu_stacking.policies.policy import State
 from bandu_stacking.realsense_utils import CALIB_DIR, CAMERA_SNS, get_camera_image
@@ -45,10 +46,19 @@ BANDU_SCALING = 0.002
 
 
 def iterate_sequence(
-    state, sequence, time_step=DEFAULT_TS, real_controller=None, teleport=False, **kwargs
+    state,
+    sequence,
+    time_step=DEFAULT_TS,
+    real_controller=None,
+    teleport=False,
+    **kwargs,
 ):  # None | INF
     assert sequence is not None
-    for i, _ in enumerate(sequence.iterate(state, real_controller=real_controller, teleport=teleport, **kwargs)):
+    for i, _ in enumerate(
+        sequence.iterate(
+            state, real_controller=real_controller, teleport=teleport, **kwargs
+        )
+    ):
         state.propagate(**kwargs)
         if time_step is None:
             pbu.wait_if_gui(**kwargs)
@@ -57,19 +67,24 @@ def iterate_sequence(
     return state
 
 
-def get_previous_log_folder(path='.'):
+def get_previous_log_folder(path="."):
     # List all items in the directory
     all_items = os.listdir(path)
-    
+
     # Filter out items that are not directories
-    directories = [item for item in all_items if os.path.isdir(os.path.join(path, item))]
-    
+    directories = [
+        item for item in all_items if os.path.isdir(os.path.join(path, item))
+    ]
+
     # Get the last modification time for each directory
-    directories_with_mtime = [(directory, os.path.getmtime(os.path.join(path, directory))) for directory in directories]
-    
+    directories_with_mtime = [
+        (directory, os.path.getmtime(os.path.join(path, directory)))
+        for directory in directories
+    ]
+
     # Sort directories by their modification time, in descending order
     directories_with_mtime.sort(key=lambda x: x[1], reverse=True)
-    
+
     # Check if there are any directories
     if directories_with_mtime:
         # Return the most recently written directory
@@ -77,7 +92,7 @@ def get_previous_log_folder(path='.'):
     else:
         # Return None if there are no directories
         return None
-    
+
 
 class StackingEnvironment:
     def __init__(
@@ -120,8 +135,7 @@ class StackingEnvironment:
                 client=self.client,
             )
 
-            
-            if(self.real_execute):
+            if self.real_execute:
                 self.real_controller = RealController(robot_body)
 
         self.client.configureDebugVisualizer(p.COV_ENABLE_GUI, 0)
@@ -181,7 +195,7 @@ class StackingEnvironment:
                     save_camera_images(
                         camera_image, prefix=camera_sn, directory=self.save_dir
                     )
-                
+
                 # visualize_multiple_pointclouds(all_pcds)
                 merged_pcds = merge_touching_pointclouds(all_pcds)
                 # filtered_pcds = [remove_statistical_outliers(pcd) for pcd in merged_pcds]
@@ -189,31 +203,38 @@ class StackingEnvironment:
 
             else:
                 log_folder = get_previous_log_folder(os.path.join(save_dir, ".."))
-                with open(os.path.join(log_folder, PCD_SAVE_NAME), 'rb') as file:
+                with open(os.path.join(log_folder, PCD_SAVE_NAME), "rb") as file:
                     merged_pcds = pickle.load(file)
 
-            
             pointcloud_save_dir = os.path.join(self.save_dir, PCD_SAVE_NAME)
 
-            with open(pointcloud_save_dir, 'wb') as file:
+            with open(pointcloud_save_dir, "wb") as file:
                 pickle.dump(merged_pcds, file)
-                
+
             all_object_ids = []
             closest_to_table_center = None
             closest_distance = np.inf
             for object_index, filtered_pcd in enumerate(merged_pcds):
                 pcd_center = np.mean(filtered_pcd, axis=0)
-                centered_pointcloud = filtered_pcd-pcd_center
-                mesh_path = os.path.join(self.save_dir, "mesh{}.obj".format(object_index))
+                centered_pointcloud = filtered_pcd - pcd_center
+                mesh_path = os.path.join(
+                    self.save_dir, "mesh{}.obj".format(object_index)
+                )
                 pointcloud_to_mesh(
                     centered_pointcloud,
                     mesh_path,
                 )
-                new_block = pbu.load_pybullet(mesh_path, color=self._obj_colors[object_index % len(self._obj_colors)], client=self.client)
+                new_block = pbu.load_pybullet(
+                    mesh_path,
+                    color=self._obj_colors[object_index % len(self._obj_colors)],
+                    client=self.client,
+                )
                 pose = pbu.Pose(pbu.Point(*(pcd_center.tolist())))
                 pbu.set_pose(new_block, pose, client=self.client)
-                dist_to_center = np.linalg.norm(np.array(pose[0])-np.array(TABLE_POSE[0]))
-                if(dist_to_center < closest_distance):
+                dist_to_center = np.linalg.norm(
+                    np.array(pose[0]) - np.array(TABLE_POSE[0])
+                )
+                if dist_to_center < closest_distance:
                     closest_distance = dist_to_center
                     closest_to_table_center = new_block
                 all_object_ids.append(new_block)
@@ -221,8 +242,8 @@ class StackingEnvironment:
             # Identify the object closest to the table center as the foundation
             self.foundation = closest_to_table_center
             self.foundation_pose = pbu.get_pose(self.foundation, client=self.client)
-            self.block_ids = [obj for obj in all_object_ids if obj != self.foundation]    
-            
+            self.block_ids = [obj for obj in all_object_ids if obj != self.foundation]
+
             pbu.wait_if_gui(client=self.client)
 
         elif object_set == "blocks":
@@ -301,7 +322,7 @@ class StackingEnvironment:
         return self.sample_constrained_action(*blocks, mesh_dicts)
 
     def sample_state(self):
-        if(not self.real_camera):
+        if not self.real_camera:
             # Add foundation object
             self.client.removeBody(self.foundation)
             self.foundation = self.client.loadURDF(
@@ -312,7 +333,9 @@ class StackingEnvironment:
             self.foundation_pose = list(copy.deepcopy(TABLE_POSE))
             self.foundation_pose[0] = list(self.foundation_pose[0])
             self.foundation_pose[0][2] = (
-                pbu.get_aabb_extent(pbu.get_aabb(self.foundation, client=self.client))[2]
+                pbu.get_aabb_extent(pbu.get_aabb(self.foundation, client=self.client))[
+                    2
+                ]
                 / 2.0
             )
             self.foundation_pose[0][0] += 0.05
@@ -352,9 +375,14 @@ class StackingEnvironment:
                         self._default_orn,
                     )
                     collision = False
-                    for placed_block in self.block_ids[:block_index] + [self.foundation]:
+                    for placed_block in self.block_ids[:block_index] + [
+                        self.foundation
+                    ]:
                         if pbu.pairwise_collision(
-                            block_id, placed_block, client=self.client, max_distance=0.03
+                            block_id,
+                            placed_block,
+                            client=self.client,
+                            max_distance=0.03,
                         ):
                             collision = True
                             break
@@ -442,7 +470,12 @@ class StackingEnvironment:
     def step(self, state, action, sim_freq=0):
         self.set_sim_state(state)
         self.world_state.assign()
-        iterate_sequence(self.world_state, action, real_controller = self.real_controller, client=self.client)
+        iterate_sequence(
+            self.world_state,
+            action,
+            real_controller=self.real_controller,
+            client=self.client,
+        )
         self.simulate_until_static(sim_freq=1e-2)
         next_state = self.state_from_sim()
         self.world_state = WorldState(client=self.client)

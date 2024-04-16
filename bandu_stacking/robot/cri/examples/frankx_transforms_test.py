@@ -1,13 +1,11 @@
 # -*- coding: utf-8 -*-
-"""Simple test script for tcp offset transforms used in frankx controller.
-"""
+"""Simple test script for tcp offset transforms used in frankx controller."""
 
 import warnings
 from abc import ABC, abstractmethod
 
 import numpy as np
-
-from cri.transforms import quat2euler, euler2quat, transform, inv_transform
+from cri.transforms import euler2quat, inv_transform, quat2euler, transform
 
 np.set_printoptions(precision=2, suppress=True)
 
@@ -15,12 +13,15 @@ np.set_printoptions(precision=2, suppress=True)
 def offset_tcp(tcp, offset):
     return inv_transform(offset, tcp)
 
+
 def offset_pose_to_pose(offset_pose, offset):
-    inv_offset = inv_transform(euler2quat((0,0,0,0,0,0)), offset)
+    inv_offset = inv_transform(euler2quat((0, 0, 0, 0, 0, 0)), offset)
     return inv_transform(inv_offset, offset_pose)
+
 
 def pose_to_offset_pose(pose, offset):
     return inv_transform(offset, pose)
+
 
 def main():
     # tcp = (0, 0, 89.1, 0, 0, -45)
@@ -41,5 +42,5 @@ def main():
     print(f"recovered pose: {rec_pose}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

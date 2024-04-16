@@ -1,22 +1,27 @@
 # -*- coding: utf-8 -*-
-"""Simple test script for transforms.
-"""
+"""Simple test script for transforms."""
 
 import time
 
 import numpy as np
-
-from cri.transforms import euler2quat, quat2euler, euler2mat, mat2euler, transform, inv_transform
+from cri.transforms import (
+    euler2mat,
+    euler2quat,
+    inv_transform,
+    mat2euler,
+    quat2euler,
+    transform,
+)
 
 np.set_printoptions(precision=2, suppress=True)
 
 
 def main():
-    axes = 'sxyz'
+    axes = "sxyz"
 
     # test inv_transform
     x1 = (10, 20, 30, 40, 50, 60)
-    x2 = (0,0,0,180,10,180)
+    x2 = (0, 0, 0, 180, 10, 180)
     print("x1:", x1)
     print("x2:", x2)
 
@@ -52,5 +57,5 @@ def main():
     print("\nx9:", x9)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

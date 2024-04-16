@@ -79,7 +79,9 @@ def create_args():
         default="logs/run{}".format(str(time.time())),
     )
     parser.add_argument(
-        "--use-previous-pointclouds", action="store_true", help="Execute on the real robot"
+        "--use-previous-pointclouds",
+        action="store_true",
+        help="Execute on the real robot",
     )
     parser.add_argument(
         "--use-sbi", action="store_true", help="Execute on the real robot"

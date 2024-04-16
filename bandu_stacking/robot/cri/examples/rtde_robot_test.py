@@ -1,25 +1,30 @@
 # -*- coding: utf-8 -*-
-"""Simple test script for AsyncRobot class using RTDEController.
-"""
+"""Simple test script for AsyncRobot class using RTDEController."""
 
 import time
 
 import numpy as np
-
-from cri.robot import SyncRobot, AsyncRobot
 from cri.controller import RTDEController
+from cri.robot import AsyncRobot, SyncRobot
 
 np.set_printoptions(precision=2, suppress=True)
 
 
 def main():
     base_frame = (0, 0, 0, 0, 0, 0)
-    work_frame = (109.1, -487.0, 341.3, 180, 0, -90)   # base frame: x->right, y->back, z->up
-#     work_frame = (487.0, -109.1, 341.3, 180, 0, 180)    # base frame: x->front, y->right, z->up
-    
-    with AsyncRobot(SyncRobot(RTDEController(ip='192.168.1.11'))) as robot:
-    # For testing in URSim simulator
-#    with AsyncRobot(SyncRobot(RTDEController(ip='127.0.0.1'))) as robot:
+    work_frame = (
+        109.1,
+        -487.0,
+        341.3,
+        180,
+        0,
+        -90,
+    )  # base frame: x->right, y->back, z->up
+    #     work_frame = (487.0, -109.1, 341.3, 180, 0, 180)    # base frame: x->front, y->right, z->up
+
+    with AsyncRobot(SyncRobot(RTDEController(ip="192.168.1.11"))) as robot:
+        # For testing in URSim simulator
+        #    with AsyncRobot(SyncRobot(RTDEController(ip='127.0.0.1'))) as robot:
         # Set TCP, linear speed,  angular speed and coordinate frame
         robot.tcp = (0, 0, 89.1, 0, 0, 0)
         robot.linear_speed = 100
@@ -41,11 +46,15 @@ def main():
 
         # Increase and decrease all joint angles
         print("Increasing and decreasing all joint angles ...")
-        robot.move_joints(robot.joint_angles + (10,)*6)
-        print("Target joint angles after increase: {}".format(robot.target_joint_angles))
+        robot.move_joints(robot.joint_angles + (10,) * 6)
+        print(
+            "Target joint angles after increase: {}".format(robot.target_joint_angles)
+        )
         print("Joint angles after increase: {}".format(robot.joint_angles))
-        robot.move_joints(robot.joint_angles - (10,)*6)
-        print("Target joint angles after decrease: {}".format(robot.target_joint_angles))
+        robot.move_joints(robot.joint_angles - (10,) * 6)
+        print(
+            "Target joint angles after decrease: {}".format(robot.target_joint_angles)
+        )
         print("Joint angles after decrease: {}".format(robot.joint_angles))
 
         # Move backward and forward
@@ -121,15 +130,19 @@ def main():
 
         # Increase and decrease all joint angles (async)
         print("Increasing and decreasing all joint angles ...")
-        robot.async_move_joints(robot.joint_angles + (10,)*6)
+        robot.async_move_joints(robot.joint_angles + (10,) * 6)
         print("Getting on with something else while command completes ...")
         robot.async_result()
-        print("Target joint angles after increase: {}".format(robot.target_joint_angles))
+        print(
+            "Target joint angles after increase: {}".format(robot.target_joint_angles)
+        )
         print("Joint angles after increase: {}".format(robot.joint_angles))
-        robot.async_move_joints(robot.joint_angles - (10,)*6)
+        robot.async_move_joints(robot.joint_angles - (10,) * 6)
         print("Getting on with something else while command completes ...")
         robot.async_result()
-        print("Target joint angles after decrease: {}".format(robot.target_joint_angles))
+        print(
+            "Target joint angles after decrease: {}".format(robot.target_joint_angles)
+        )
         print("Joint angles after decrease: {}".format(robot.joint_angles))
 
         # Move backward and forward (async)
@@ -178,7 +191,9 @@ def main():
         robot.async_result()
 
         # Turn clockwise and anticlockwise around work frame z-axis (async)
-        print("Turning clockwise and anticlockwise around work frame z-axis (async) ...")
+        print(
+            "Turning clockwise and anticlockwise around work frame z-axis (async) ..."
+        )
         robot.async_move_linear((0, 0, 0, 0, 0, 30))
         print("Getting on with something else while command completes ...")
         robot.async_result()
@@ -187,7 +202,9 @@ def main():
         robot.async_result()
 
         # Make a circular move down/up, via a point on the right/left
-        print("Making a circular move down and up, via a point on the right/left (async) ...")
+        print(
+            "Making a circular move down and up, via a point on the right/left (async) ..."
+        )
         robot.blend_radius = 10
         robot.async_move_circular((0, 20, 20, 0, 0, 0), (0, 0, 40, 0, 0, 0))
         print("Getting on with something else while command completes ...")
@@ -243,6 +260,6 @@ def main():
         print("Final target pose in work frame: {}".format(robot.target_pose))
         print("Final pose in work frame: {}".format(robot.pose))
 
-     
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

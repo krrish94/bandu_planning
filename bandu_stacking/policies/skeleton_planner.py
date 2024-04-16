@@ -170,7 +170,14 @@ class SkeletonPlanner(Policy):
         return 1
 
     def sample_constrained_action(
-        self, state, source_obj, target_obj, mesh_info, best_face=False, random_face=False, **kwargs
+        self,
+        state,
+        source_obj,
+        target_obj,
+        mesh_info,
+        best_face=False,
+        random_face=False,
+        **kwargs,
     ):
         """Sample a pick and place action with the source object on the target
         object."""
@@ -179,7 +186,7 @@ class SkeletonPlanner(Policy):
             mesh_dict = mesh_info[source_obj]
             best_face = mesh_dict["face_sizes"][0][0]
             normal = mesh_dict["mesh"].face_normals[best_face]
-        elif(random_face):
+        elif random_face:
             # Pick a random face among the top (upto) 10 largest faces
             mesh_dict = mesh_info[source_obj]
             num_faces = min(10, len(mesh_dict["face_sizes"]))
@@ -189,8 +196,6 @@ class SkeletonPlanner(Policy):
         else:
             # Place all objects facing upward
             normal = [0, 0, 1]
-
-
 
         def get_rotation_matrix(vec2, vec1=np.array([1, 0, 0])):
             """Get rotation matrix between two vectors using scipy."""

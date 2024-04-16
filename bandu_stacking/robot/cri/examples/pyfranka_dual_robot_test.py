@@ -1,33 +1,34 @@
 # -*- coding: utf-8 -*-
-"""Simple test script for AsyncRobot class using FrankxController.
-"""
+"""Simple test script for AsyncRobot class using FrankxController."""
 
 import time
 
 import numpy as np
-
-from cri.robot import SyncRobot, AsyncRobot
 from cri.controller import PyfrankaController
+from cri.robot import AsyncRobot, SyncRobot
 
 np.set_printoptions(precision=2, suppress=True)
 
 
 def main():
     base_frame = (0, 0, 0, 0, 0, 0)
-    work_frame = (400, 0, 300, 180, 0, 180)   # base frame: x->front, y->right, z->up
+    work_frame = (400, 0, 300, 180, 0, 180)  # base frame: x->front, y->right, z->up
 
-    with AsyncRobot(SyncRobot(PyfrankaController(ip='172.16.0.1'))) as robot_1, \
-        AsyncRobot(SyncRobot(PyfrankaController(ip='172.16.1.1'))) as robot_2:
+    with AsyncRobot(
+        SyncRobot(PyfrankaController(ip="172.16.0.1"))
+    ) as robot_1, AsyncRobot(SyncRobot(PyfrankaController(ip="172.16.1.1"))) as robot_2:
 
         robots = [robot_1, robot_2]
 
         # Set robot axes and TCP
         for i, robot in enumerate(robots):
-            robot.axes = 'sxyz'     # static/extrinsic frame xyz convention
+            robot.axes = "sxyz"  # static/extrinsic frame xyz convention
             robot.tcp = (0, 0, 75, 0, 0, 225)
 
             # Set Franka-specific robot parameters
-            robot.sync_robot.controller.set_joint_impedance((3000, 3000, 3000, 2500, 2500, 2000, 2000))
+            robot.sync_robot.controller.set_joint_impedance(
+                (3000, 3000, 3000, 2500, 2500, 2000, 2000)
+            )
             robot.sync_robot.controller.rel_velocity = 0.1
             robot.sync_robot.controller.rel_accel = 0.1
             robot.sync_robot.controller.rel_jerk = 0.1
@@ -49,8 +50,8 @@ def main():
         # Increase and decrease all joint angles
         print("Increasing and decreasing all joint angles ...")
         for robot in robots:
-            robot.move_joints(robot.joint_angles + (10,)*7)
-            robot.move_joints(robot.joint_angles - (10,)*7)
+            robot.move_joints(robot.joint_angles + (10,) * 7)
+            robot.move_joints(robot.joint_angles - (10,) * 7)
 
         # Move backward and forward
         print("Moving backward and forward ...")
@@ -109,11 +110,11 @@ def main():
         # Increase and decrease all joint angles (async)
         print("Increasing and decreasing all joint angles ...")
         for robot in robots:
-            robot.async_move_joints(robot.joint_angles + (10,)*7)
+            robot.async_move_joints(robot.joint_angles + (10,) * 7)
         for robot in robots:
             robot.async_result()
         for robot in robots:
-            robot.async_move_joints(robot.joint_angles - (10,)*7)
+            robot.async_move_joints(robot.joint_angles - (10,) * 7)
         for robot in robots:
             robot.async_result()
 
@@ -173,7 +174,9 @@ def main():
             robot.async_result()
 
         # Turn clockwise and anticlockwise around work frame z-axis (async)
-        print("Turning clockwise and anticlockwise around work frame z-axis (async) ...")
+        print(
+            "Turning clockwise and anticlockwise around work frame z-axis (async) ..."
+        )
         for robot in robots:
             robot.async_move_linear((0, 0, 0, 0, 0, 30))
         for robot in robots:
@@ -208,5 +211,5 @@ def main():
             robot.async_result()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
