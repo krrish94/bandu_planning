@@ -351,18 +351,16 @@ class Switch(Command):
         self.body = body
         self.parent = parent
 
-    def iterate(self, state, real_controller:RealController=None, **kwargs):
+    def iterate(self, state, real_controller: RealController = None, **kwargs):
 
-        
         if self.parent is None and self.body in state.attachments.keys():
-            if(real_controller is not None):
+            if real_controller is not None:
                 real_controller.ungrasp()
             del state.attachments[self.body]
 
-
         elif self.parent is not None:
 
-            if(real_controller is not None):
+            if real_controller is not None:
                 real_controller.grasp()
 
             robot, tool_link = self.parent
@@ -501,7 +499,7 @@ class GroupTrajectory(Trajectory):
         super(GroupTrajectory, self).__init__(body, joints, path, *args, **kwargs)
         self.group = group
 
-    def iterate(self, state, real_controller:RealController=None, **kwargs):
+    def iterate(self, state, real_controller: RealController = None, **kwargs):
 
         if real_controller is not None:
             # current_joint_positions = real_controller.get_joint_positions(**kwargs)
@@ -606,7 +604,7 @@ class RealController:
     def ungrasp(self):
         print("[Real Robot Controller] Ungrasp from switch")
         self.robot.release_gripper()
-        
+
     def command_group(self, group, positions, **kwargs):  # TODO: default timeout
 
         if group == ARM_GROUP:
