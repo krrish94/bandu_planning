@@ -79,7 +79,7 @@ def visualize_graph(G):
     plt.show()
 
 
-def remove_statistical_outliers(pcd_array, nb_neighbors=25, std_ratio=0.5):
+def remove_statistical_outliers(pcd_array, nb_neighbors=35, std_ratio=0.3):
     """Remove statistical outliers from a point cloud.
 
     Parameters:

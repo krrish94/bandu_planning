@@ -354,14 +354,14 @@ class Switch(Command):
     def iterate(self, state, real_controller: RealController = None, **kwargs):
 
         if self.parent is None and self.body in state.attachments.keys():
-            if real_controller is not None:
-                real_controller.ungrasp()
+            # if real_controller is not None:
+            #     real_controller.ungrasp()
             del state.attachments[self.body]
 
         elif self.parent is not None:
 
-            if real_controller is not None:
-                real_controller.grasp()
+            # if real_controller is not None:
+            #     real_controller.grasp()
 
             robot, tool_link = self.parent
 
@@ -592,6 +592,10 @@ class RealController:
         self.body = body
         self.robot = FrankaFr3(ROBOT_IP, np.eye(4))
 
+    def go_home(self):
+        positions_degrees = [math.degrees(p) for p in DEFAULT_ARM_POS]
+        self.robot.move_joints(positions_degrees)
+
     def command_group_trajectory(self, group, positions, dt=0.01, **kwargs):
         for position in positions:
             self.command_group(group, position, **kwargs)
@@ -612,10 +616,10 @@ class RealController:
             self.robot.move_joints(positions_degrees)
         else:
             if list(positions)[0] > (MAX_PANDA_FINGER - 0.01):
-                print("[Real Robot Controller] Grasp from command")
+                print("[Real Robot Controller] Ungrasp from command")
                 self.robot.release_gripper()
             else:
-                print("[Real Robot Controller] Ungrasp from command")
+                print("[Real Robot Controller] Grasp from command")
                 self.robot.grasp()
 
     def get_joint_positions(self, **kwargs):

@@ -78,8 +78,8 @@ def get_grasp_candidates(obj, gripper_width=np.inf, grasp_mode="mesh", **kwargs)
     if grasp_mode == "mesh":
         pitches = [-np.pi, np.pi]
         target_tolerance = np.pi / 4
-        z_threshold = 1e-2
-        antipodal_tolerance = np.pi / 16
+        z_threshold = 1e-3
+        antipodal_tolerance = np.pi / 8
 
         generated_grasps = generate_mesh_grasps(
             obj,

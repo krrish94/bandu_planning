@@ -391,7 +391,6 @@ def generate_mesh_grasps(
     attempts = last_attempts = 0
 
     while attempts < max_attempts:
-
         attempts += 1
         last_attempts += 1
 

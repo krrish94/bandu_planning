@@ -28,7 +28,7 @@ SELF_COLLISIONS = True  # TODO: check self collisions
 MAX_IK_TIME = 0.05 if USING_ROS else 0.01
 MAX_IK_DISTANCE = np.inf if USING_ROS else np.inf  # math.radians(30)
 MAX_TOOL_DISTANCE = np.inf
-DISABLE_ALL_COLLISIONS = True
+DISABLE_ALL_COLLISIONS = False
 
 
 def get_closest_distance(robot, arm_joints, parent_link, tool_link, gripper_pose, obj):

@@ -35,6 +35,7 @@ from bandu_stacking.vision_utils import (
     mask_roi,
     merge_touching_pointclouds,
     pointcloud_to_mesh,
+    remove_statistical_outliers,
     save_camera_images,
     visualize_multiple_pointclouds,
 )
@@ -137,6 +138,8 @@ class StackingEnvironment:
 
             if self.real_execute:
                 self.real_controller = RealController(robot_body)
+                self.real_controller.ungrasp()
+                self.real_controller.go_home()
 
         self.client.configureDebugVisualizer(p.COV_ENABLE_GUI, 0)
         self.client.configureDebugVisualizer(p.COV_ENABLE_SHADOWS, 0)
@@ -198,7 +201,9 @@ class StackingEnvironment:
 
                 # visualize_multiple_pointclouds(all_pcds)
                 merged_pcds = merge_touching_pointclouds(all_pcds)
-                # filtered_pcds = [remove_statistical_outliers(pcd) for pcd in merged_pcds]
+                filtered_pcds = [
+                    remove_statistical_outliers(pcd) for pcd in merged_pcds
+                ]
                 visualize_multiple_pointclouds(merged_pcds)
 
             else:
